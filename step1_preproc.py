@@ -3,6 +3,11 @@
 #
 # 1) only written to accept one experiment phase (e.g. Study, Test) per session, assumes
 #       all epi scans in session pertain to phase
+#
+# TODO:
+#   1) Update wait function to wait for job name rather than job number
+#   2) Add atlas
+#   3) Test various functions/syntax
 
 
 import json
@@ -11,10 +16,14 @@ import sys
 import subprocess
 import fnmatch
 import math
+import time
 
 
 # %%
 # --- Step 0: Set up
+#
+# Set/receive arguments, set variables for data, working, and atlas directories,
+#   make working dir if needed, and set up general functions.
 
 test_mode = True
 
@@ -36,23 +45,43 @@ if not os.path.exists(work_dir):
 
 
 # Submit jobs to slurm
-def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses):
-    full_name = "TP1_" + h_sub + "-" + h_ses
-    sbatch_job = "sbatch \
-        -J TP1 -t {}:00:00 --mem={}000 --ntasks-per-node={} \
-        -p centos7_IB_44C_512G  -o {}.out -e {}.err \
+def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
+
+    full_name = "TP1_" + h_sub + "_" + h_ses + "_" + h_str
+    sbatch_job = f"sbatch \
+        -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
+        -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
         --account iacc_madlab --qos pq_madlab \
-        --wrap='module load afni-20.2.06 \n {}'".format(
-        wall_hours, mem_gig, num_proc, full_name, full_name, command
-    )
+        --wrap='module load afni-20.2.06 \n {command}'"
+
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
-    return job_id
+    # return job_id
+
+    while_count = 0
+    status = False
+    while not status:
+
+        check_cmd = "squeue -u $(whoami)"
+        sq_check = subprocess.Popen(check_cmd, shell=True, stdout=subprocess.PIPE)
+        out_lines, err_lines = sq_check.communicate()
+        b_decode = out_lines.decode("utf-8")
+        num_lines = len(b_decode.split("\n"))
+
+        if num_lines < 3:
+            status = True
+
+        if not status:
+            while_count += 1
+            print(f"Wait count for sbatch job {h_str}: ", while_count)
+            time.sleep(2)
+    print("Sbatch jobs finished")
 
 
 # Submit afni subprocess
+# TODO: This function is untested
 def func_afni(cmd):
-    afni_job = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    afni_job = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
     afni_out, afni_err = afni_job.communicate()
     return afni_err
 
@@ -63,7 +92,7 @@ def func_afni(cmd):
 # Get func, anat, fmap data. Rename appropriately.
 #
 # To account for different num of fmaps, will
-#   produce AP, PA fmap per run
+#   produce AP, PA fmap per run.
 
 # struct
 struct_nii = os.path.join(data_dir, "anat", "{}_{}_run-1_T1w.nii.gz".format(subj, sess))
@@ -71,7 +100,7 @@ struct_raw = os.path.join(work_dir, "struct+orig")
 if not os.path.exists(struct_raw + ".HEAD"):
     h_cmd = "3dcopy {} {}".format(struct_nii, struct_raw)
     if test_mode:
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess)
+        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "struct")
     else:
         func_afni(h_cmd)
 
@@ -97,7 +126,7 @@ for i in range(len(epi_list)):
     if not os.path.exists(epi_raw + ".HEAD"):
         h_cmd = "3dcopy {} {}".format(epi_nii, epi_raw)
         if test_mode:
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess)
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "epi")
         else:
             func_afni(h_cmd)
 
@@ -128,13 +157,12 @@ def func_fmap(h_file, h_run):
     if not os.path.exists(fmap_raw + ".HEAD"):
         h_cmd = "3dcopy {} {}".format(fmap_nii, fmap_raw)
         if test_mode:
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess)
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "fmap")
         else:
             func_afni(h_cmd)
 
 
 # TODO: first half of conditional is untested
-
 if len(fmap_list) == 2:
     for i in range(1, 3):
         for j in fmap_list:
@@ -154,84 +182,81 @@ else:
 # %%
 # --- Step 2: Detect outliers voxels, blip correct
 #
+# 1) Determine the proportion of voxels per volume that have outlier signal.
+#       Censor volumes that exceed limit.
+#
+# 2) Correct for signal fallout using fmap. This approach is taken from
+#       afni_proc. It uses the fmap to "unwarp" the run epi.
+#
 # num_tr is hardcoded (305), this doesn't exist in json file
 
 for i in epi_dict.keys():
 
+    # determine polort arg, file strings, find outliers
     pol = 1 + math.ceil((epi_dict[i]["RepetitionTime"] * 305) / 150)
     h_fileA = os.path.join(work_dir, "outcount." + i + ".1D")
     h_fileB = os.path.join(work_dir, "out.cen." + i + ".1D")
 
-    h_cmd = """
-        3dToutcount -automask -fraction -polort {} -legendre {}+orig > {}
-        1deval -a {} -expr "1-step(a-0.1)" > {}
-    """.format(
-        pol,
-        os.path.join(work_dir, i),
-        h_fileA,
-        h_fileA,
-        h_fileB,
-    )
+    if not os.path.exists(h_fileB):
+        h_cmd = """
+            3dToutcount -automask -fraction -polort {0} -legendre {1}+orig > {2}
+            1deval -a {2} -expr "1-step(a-0.1)" > {3}
+        """.format(
+            pol,
+            os.path.join(work_dir, i),
+            h_fileA,
+            h_fileB,
+        )
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "outlier")
+        else:
+            func_afni(h_cmd)
 
-    if test_mode:
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess)
-    else:
-        func_afni(h_cmd)
+    h_run = i.split("_")[0]
+    for j in ["Forward", "Reverse"]:
 
+        # create median datasets and masks
+        h_blip_raw = os.path.join(work_dir, "blip_" + h_run + "_" + j)
+        h_blip1 = os.path.join(work_dir, "tmp_blip_med_" + h_run + "_" + j)
+        h_blip2 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_" + j)
 
-# ### Update - do blip here
-# # Ripped from afni_proc.py
+        if not os.path.exists(h_blip2 + "+orig.HEAD"):
+            h_cmd = f"""
+                3dTstat -median -prefix {h_blip1} {h_blip_raw}+orig
+                3dAutomask -apply_prefix {h_blip2} {h_blip1}+orig
+            """
+            if test_mode:
+                func_sbatch(h_cmd, 1, 1, 1, subj, sess, "fmap_med")
+            else:
+                func_afni(h_cmd)
 
-# if [ ! -f ${block[0]}_blip+orig.HEAD ]; then
+    # comput midpoint warp, unwarp run data (solve for fall out), apply header
+    h_q1 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_Reverse")
+    h_q2 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_Forward")
+    h_qout = os.path.join(work_dir, "tmp_blip_warp_" + h_run)
 
-# 	# create median datasets from forward and reverse time series
-# 	3dTstat -median -prefix rm.blip.med.fwd blip_Forward+orig
-# 	3dTstat -median -prefix rm.blip.med.rev blip_Reverse+orig
+    h_blip_for = os.path.join(work_dir, "blip_" + h_run + "_Forward")
+    h_run_epi = os.path.join(work_dir, i)
 
-# 	# automask the median datasets
-# 	3dAutomask -apply_prefix rm.blip.med.masked.fwd rm.blip.med.fwd+orig
-# 	3dAutomask -apply_prefix rm.blip.med.masked.rev rm.blip.med.rev+orig
+    if not os.path.exists(h_run_epi + "_blip+orig.HEAD"):
+        h_cmd = f"""
+            3dQwarp -plusminus -pmNAMES Rev For \
+                -pblur 0.05 0.05 -blur -1 -1 \
+                -noweight -minpatch 9 \
+                -source {h_q1}+orig \
+                -base {h_q2}+orig \
+                -prefix {h_qout}
 
-# 	# compute the midpoint warp between the median datasets
-# 	3dQwarp -plusminus -pmNAMES Rev For                           \
-# 	    -pblur 0.05 0.05 -blur -1 -1                          \
-# 	    -noweight -minpatch 9                                 \
-# 	    -source rm.blip.med.masked.rev+orig                   \
-# 	    -base   rm.blip.med.masked.fwd+orig                   \
-# 	    -prefix blip_warp
+            3dNwarpApply -quintic -nwarp {h_qout}_For_WARP+orig \
+                -source {h_run_epi}+orig -prefix {h_run_epi}_blip
 
-# 	# # warp median datasets (forward and each masked) for QC checks
-# 	# # (and preserve obliquity)
-# 	# 3dNwarpApply -quintic -nwarp blip_warp_For_WARP+orig          \
-# 	# 	-source rm.blip.med.fwd+orig                     \
-# 	# 	-prefix blip_med_for
+            3drefit -atrcopy {h_blip_for}+orig IJK_TO_DICOM_REAL {h_run_epi}_blip+orig
+        """
+        if test_mode:
+            func_sbatch(h_cmd, 1, 4, 2, subj, sess, "fmap_qwarp")
+        else:
+            func_afni(h_cmd)
 
-# 	# 3drefit -atrcopy blip_forward+orig IJK_TO_DICOM_REAL          \
-# 	# 	blip_med_for+orig
-
-# 	# 3dNwarpApply -quintic -nwarp blip_warp_For_WARP+orig          \
-# 	# 	-source rm.blip.med.masked.fwd+orig              \
-# 	# 	-prefix blip_med_for_masked
-
-# 	# 3drefit -atrcopy blip_forward+orig IJK_TO_DICOM_REAL          \
-# 	# 	blip_med_for_masked+orig
-
-# 	# 3dNwarpApply -quintic -nwarp blip_warp_Rev_WARP+orig          \
-# 	# 	-source rm.blip.med.masked.rev+orig              \
-# 	# 	-prefix blip_med_rev_masked
-
-# 	# 3drefit -atrcopy blip_reverse+orig IJK_TO_DICOM_REAL          \
-# 	# 	blip_med_rev_masked+orig
-
-# 	# warp EPI time series data
-# 	for i in ${block[@]}; do
-# 	    3dNwarpApply -quintic -nwarp blip_warp_For_WARP+orig      \
-# 			-source ${i}+orig           \
-# 			-prefix ${i}_blip
-
-# 	    3drefit -atrcopy blip_forward+orig IJK_TO_DICOM_REAL      \
-# 			${i}_blip+orig
-# 	done
-# fi
 
 # %%
+# --- Step 3: Volume Registration
