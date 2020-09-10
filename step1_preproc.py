@@ -71,6 +71,9 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
         if num_lines < 3:
             status = True
 
+        # if not h_str in b_decode:
+        #     status = True
+
         if not status:
             while_count += 1
             print(f"Wait count for sbatch job {h_str}: ", while_count)
