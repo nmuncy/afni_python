@@ -18,18 +18,19 @@ else:
 
 data_dir = "/home/data/madlab/Mattfeld_vCAT/sourcedata"
 work_dir = "/scratch/madlab/nate_vCAT/dset"
-scan_dict = {"REVL": "func", "T1w": "anat", "Dist": "fmap"}
+source_dir = "/scratch/madlab/nate_vCAT/sourcedata"
+scan_dict = {"Study": "func", "T1w": "anat", "Dist": "fmap"}
 
 
-def func_sbatch_nii(out_dir, file_str, dcm_dir, h_str, subj, sess):
+# Submit jobs to slurm
+def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
+    full_name = h_sub + "_" + h_ses + "_" + h_str
     sbatch_job = f"sbatch \
-        -J {h_str} -t 00:30:00 --mem=4000 --ntasks-per-node=4 \
-        -p centos7_IB_44C_512G  -o dcm2nii_{subj}_{sess}_{h_str}.out \
-        -e dcm2nii_{subj}_{sess}_{h_str}{h_str}.err \
+        -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
+        -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
         --account iacc_madlab --qos pq_madlab \
-        --wrap='module load dcm2niix \n \
-        dcm2niix -b y -ba y -z y -o {out_dir} -f {file_str} {dcm_dir}'"
+        --wrap='{command}'"
 
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
@@ -49,44 +50,69 @@ def func_sbatch_nii(out_dir, file_str, dcm_dir, h_str, subj, sess):
         if not status:
             while_count += 1
             print(f"Wait count for sbatch job {h_str}: ", while_count)
-            time.sleep(2)
-    print('Sbatch jobs "{h_str}" finished')
+            time.sleep(3)
+    print(f'Sbatch job "{h_str}" finished')
 
 
 # %%
 
-# def func_ex_tar()
+# TODO: put everything below in a function
 
 sess = "ses-" + dcm_tar.split("-")[4].split(".")[0]
 subj = "sub-" + dcm_tar.split("-")[3]
 subj_dir = os.path.join(work_dir, subj, sess)
+dcm_dir = os.path.join(source_dir, subj, sess)
 
-if not os.path.exists(subj_dir):
-    os.makedirs(subj_dir)
+for i in [subj_dir, dcm_dir]:
+    if not os.path.exists(i):
+        os.makedirs(i)
 
+tar_ball = os.path.join(data_dir, dcm_tar)
+tar_out = dcm_tar.split(".")[0]
+if not os.path.exists(os.path.join(dcm_dir, tar_out)):
+    h_cmd = f"tar -C {dcm_dir} -xzf {tar_ball}"
+    func_sbatch(h_cmd, 1, 1, 1, subj, sess, "tarEx")
 
-with tarfile.open(os.path.join(data_dir, dcm_tar), mode="r") as tar_file:
-    # print(tar_file)
-    tar_list = [x for x in tar_file.getnames() if "/resources" not in x]
-    del tar_list[0]
+scan_list = os.listdir(os.path.join(dcm_dir, tar_out, "scans"))
+for i in scan_dict:
 
-    # for j in tar_list:
-    j = tar_list[0]
-    if (
-        not re.search("dMRI", j)
-        and not re.search("32ch", j)
-        and not re.search("setter", j)
-        and not re.search("ROI", j)
-    ):
-        if re.search("Dist", j):
+    h_list = [x for x in scan_list if i in x and "setter" not in x and "dMRI" not in x]
+    h_out_dir = os.path.join(subj_dir, scan_dict[i])
+    if not os.path.exists(h_out_dir):
+        os.makedirs(h_out_dir)
 
-            h_dir = "dir-" + j.split("_")[-1]
-            file_str = subj + "_" + sess + "_acq-func_" + h_dir + "_epi"
-            # dcm_dir = os.path.join(data_dir, j, "resources/DICOM/")
-            # print(os.listdir(dcm_dir))
-            
-            for key in scan_dict:
-                if key in j.split("/")[-1]
+    for j in h_list:
+
+        h_input_dir = os.path.join(
+            dcm_dir, tar_out, "scans", j, "resources/DICOM/files"
+        )
+
+        # This might be cleaner in a class
+        if scan_dict[i] == "func":
+            h_out_str = (
+                subj
+                + "_"
+                + sess
+                + "_"
+                + "task-study"
+                + "_run-"
+                + j.split("_")[-1]
+                + "_bold.nii.gz"
+            )
+        elif scan_dict[i] == "fmap":
+            h_out_str = (
+                subj + "_" + sess + "_acq-func_dir-" + j.split("_")[-1] + "_epi.nii.gz"
+            )
+        elif scan_dict[i] == "T1w":
+            h_out_str = subj + "_" + sess + "_T1w.nii.gz"
+
+        h_cmd = f"""
+        module load dcm2niix
+        dcm2niix -b y -ba y -z y -o {h_out_dir} -f {h_out_str} {h_input_dir}
+        """
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "dcm2nii")
 
 
 # def main()
+# %%
