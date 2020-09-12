@@ -6,7 +6,8 @@
 #SBATCH --mem-per-cpu=4gb   # memory per CPU core
 #SBATCH -J "TS0"   # job name
 #SBATCH --partition centos7_IB_44C_512G
-#SBATCH --account iacc_madlab
+
+# #SBATCH --account iacc_madlab
 
 h_arg=$1
 h_dir=$2

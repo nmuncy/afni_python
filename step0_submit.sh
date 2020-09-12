@@ -12,7 +12,8 @@ mkdir -p $outDir
 refDir=/home/data/madlab/Mattfeld_vCAT/sourcedata
 subjList=(`ls ${refDir}/*tar.gz`)
 
-for i in ${subjList[@]}; do
+# for i in ${subjList[@]}; do
+for i in ${subjList[0]}; do
 
     file=${i##*/}
     echo $file
@@ -21,5 +22,7 @@ for i in ${subjList[@]}; do
     -o ${outDir}/output_TS0_${file%%.*}.txt \
     -e ${outDir}/error_TS0_${file%%.*}.txt \
     ${codeDir}/step0_wrap_py.sh $file $codeDir
+
+    sleep 1
 done
 
