@@ -6,7 +6,7 @@
 #
 # TODO:
 #   1) Update wait function to wait for job name rather than job number
-#   2) Add atlas
+#   2) Update template?
 #   3) Test various functions/syntax
 
 
@@ -327,3 +327,32 @@ if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
 
 # %%
 # --- Step 4: Calc, Perfrom normalization
+
+h_cmd = f"""
+    template=~/bin/Templates/vold2_mni/vold2_mni_brain+tlrc
+    cd {work_dir}
+
+    # calc align of epi/anat
+    align_epi_anat.py \\
+        -anat2epi \\
+        -anat struct+orig \\
+        -save_skullstrip \\
+        -suffix _al_junk \\
+        -epi epi_vr_base+orig \\
+        -epi_base 0 \\
+        -epi_strip 3dAutomask \\
+        -cost lpc+ZZ \\
+        -volreg off \\
+        -tshift off
+
+    # calc non-linear warp
+    auto_warp.py -base $template -input struct_ns+orig -skull_strip_input no
+    3dbucket -prefix struct_ns awpy/struct_ns.aw.nii*
+    cp awpy/anat.un.aff.Xat.1D .
+    cp awpy/anat.un.aff.qw_WARP.nii .
+"""
+if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
+    if test_mode:
+        func_sbatch(h_cmd, 4, 4, 4, subj, sess, "diffeo")
+    else:
+        func_afni(h_cmd)
