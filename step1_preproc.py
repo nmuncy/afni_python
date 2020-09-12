@@ -28,16 +28,17 @@ import time
 test_mode = True
 
 if test_mode:
-    subj = "sub-4001"
+    subj = "sub-005"
     sess = "ses-S1"
-    phase = "Study"
+    phase = "vCAT"
 else:
     subj = str(sys.argv[1])
     sess = str(sys.argv[2])
     phase = str(sys.argv[3])
 
-data_dir = os.path.join("/home/data/madlab/McMakin_EMUR01/dset", subj, sess)
-work_dir = os.path.join("/scratch/madlab/chen_analysis/derivatives", subj, sess)
+par_dir = "/scratch/madlab/nate_vCAT"
+data_dir = os.path.join(par_dir, "dset", subj, sess)
+work_dir = os.path.join(par_dir, "derivatives", subj, sess)
 atlas_dir = "TODO"
 
 if not os.path.exists(work_dir):
@@ -47,16 +48,15 @@ if not os.path.exists(work_dir):
 # Submit jobs to slurm
 def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
-    full_name = "TP1_" + h_sub + "_" + h_ses + "_" + h_str
+    full_name = h_sub + "_" + h_ses + "_" + h_str
     sbatch_job = f"sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
         -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
-        --account iacc_madlab --qos pq_madlab \
         --wrap='module load afni-20.2.06 \n {command}'"
+    # --account iacc_madlab --qos pq_madlab \
 
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
-    # return job_id
 
     while_count = 0
     status = False
@@ -66,19 +66,15 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
         sq_check = subprocess.Popen(check_cmd, shell=True, stdout=subprocess.PIPE)
         out_lines, err_lines = sq_check.communicate()
         b_decode = out_lines.decode("utf-8")
-        num_lines = len(b_decode.split("\n"))
 
-        if num_lines < 3:
+        if h_str not in b_decode:
             status = True
-
-        # if not h_str in b_decode:
-        #     status = True
 
         if not status:
             while_count += 1
             print(f"Wait count for sbatch job {h_str}: ", while_count)
-            time.sleep(2)
-    print("Sbatch jobs finished")
+            time.sleep(3)
+    print(f'Sbatch job "{h_str}" finished')
 
 
 # Submit afni subprocess
@@ -98,7 +94,7 @@ def func_afni(cmd):
 #   produce AP, PA fmap per run.
 
 # struct
-struct_nii = os.path.join(data_dir, "anat", "{}_{}_run-1_T1w.nii.gz".format(subj, sess))
+struct_nii = os.path.join(data_dir, "anat", "{}_{}_T1w.nii.gz".format(subj, sess))
 struct_raw = os.path.join(work_dir, "struct+orig")
 if not os.path.exists(struct_raw + ".HEAD"):
     h_cmd = "3dcopy {} {}".format(struct_nii, struct_raw)
@@ -107,11 +103,12 @@ if not os.path.exists(struct_raw + ".HEAD"):
     else:
         func_afni(h_cmd)
 
-# epi - only study, not rest
+
+# epi - only task, not rsFMRI
 epi_list = [
     epi
     for epi in os.listdir(os.path.join(data_dir, "func"))
-    if fnmatch.fnmatch(epi, "*study*.nii.gz")
+    if fnmatch.fnmatch(epi, "*task-vCAT*.nii.gz")
 ]
 
 # start dict for header info
@@ -133,7 +130,10 @@ for i in range(len(epi_list)):
         else:
             func_afni(h_cmd)
 
+# %%
 # fmap
+#
+# In EMU, account for potential multiple fmaps, use IntendedFor
 json_list = [
     x
     for x in os.listdir(os.path.join(data_dir, "fmap"))
@@ -144,10 +144,13 @@ fmap_list = []
 for i in json_list:
     with open(os.path.join(data_dir, "fmap", i)) as j:
         h_json = json.load(j)
-        for k in epi_list:
-            h_epi = os.path.join(sess, "func", k)
-            if h_epi in h_json["IntendedFor"]:
-                fmap_list.append(i.split(".")[0] + ".nii.gz")
+        if "IntendedFor" not in h_json:
+            fmap_list.append(i.split(".")[0] + ".nii.gz")
+        else:
+            for k in epi_list:
+                h_epi = os.path.join(sess, "func", k)
+                if h_epi in h_json["IntendedFor"]:
+                    fmap_list.append(i.split(".")[0] + ".nii.gz")
 
 # copy fmap function
 def func_fmap(h_file, h_run):
@@ -165,9 +168,10 @@ def func_fmap(h_file, h_run):
             func_afni(h_cmd)
 
 
-# TODO: first half of conditional is untested
+# Make fmap for each epi run
+epi_len = len(epi_list) + 1
 if len(fmap_list) == 2:
-    for i in range(1, 3):
+    for i in range(1, epi_len):
         for j in fmap_list:
             func_fmap(j, i)
 else:
@@ -190,22 +194,21 @@ else:
 #
 # 2) Correct for signal fallout using fmap. This approach is taken from
 #       afni_proc. It uses the fmap to "unwarp" the run epi.
-#
-# num_tr is hardcoded (305), this doesn't exist in json file
 
 for i in epi_dict.keys():
 
     # determine polort arg, file strings, find outliers
-    pol = 1 + math.ceil((epi_dict[i]["RepetitionTime"] * 305) / 150)
     h_fileA = os.path.join(work_dir, "outcount." + i + ".1D")
     h_fileB = os.path.join(work_dir, "out.cen." + i + ".1D")
 
     if not os.path.exists(h_fileB):
         h_cmd = """
-            3dToutcount -automask -fraction -polort {0} -legendre {1}+orig > {2}
-            1deval -a {2} -expr "1-step(a-0.1)" > {3}
+            len_tr=`3dinfo -tr {0}+orig`
+            pol_time=$(echo $(echo $hold*$len_tr | bc)/150 | bc -l)
+            pol=$((1 + `printf "%.0f" $pol_time`))
+            3dToutcount -automask -fraction -polort $pol -legendre {0}+orig > {1}
+            1deval -a {1} -expr "1-step(a-0.1)" > {2}
         """.format(
-            pol,
             os.path.join(work_dir, i),
             h_fileA,
             h_fileB,
@@ -256,10 +259,71 @@ for i in epi_dict.keys():
             3drefit -atrcopy {h_blip_for}+orig IJK_TO_DICOM_REAL {h_run_epi}_blip+orig
         """
         if test_mode:
-            func_sbatch(h_cmd, 1, 4, 2, subj, sess, "fmap_qwarp")
+            func_sbatch(h_cmd, 1, 4, 2, subj, sess, "qwarp")
         else:
             func_afni(h_cmd)
 
 
 # %%
-# --- Step 3: Volume Registration
+# --- Step 3: Make volreg base
+#
+# If data is not time shifted, do so before determining volreg_base.
+# Also, it was easier to write a small bash script due to the multiple
+#   afni commands.
+
+out_list = [
+    os.path.join(work_dir, x)
+    for x in os.listdir(work_dir)
+    if fnmatch.fnmatch(x, "outcount.*.1D")
+]
+out_all = os.path.join(work_dir, "outcount_all.1D")
+with open(out_all, "w") as outfile:
+    for i in out_list:
+        with open(i) as infile:
+            outfile.write(infile.read())
+
+if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
+    vr_script = os.path.join(work_dir, "do_volregBase.sh")
+    with open(vr_script, "w") as script:
+        script.write(
+            """
+            #!/bin/bash
+            cd {}
+
+            unset tr_counts block
+            numRuns=0; for i in run*_vCAT+orig.HEAD; do
+                hold=`3dinfo -ntimes ${{i%.*}}`
+                tr_counts+="$hold "
+                block[$numRuns]=${{i%+*}}
+                let numRuns=$[$numRuns+1]
+            done
+            # echo ${{block[@]}}
+
+            minindex=`3dTstat -argmin -prefix - outcount_all.1D\\'`
+            ovals=(`1d_tool.py -set_run_lengths $tr_counts -index_to_run_tr $minindex`)
+            minoutrun=${{ovals[0]}}
+            minouttr=${{ovals[1]}}
+            # echo $minoutrun $minouttr
+
+            c=0; for ((d=1; d <= $numRuns; d++)); do
+                if [ 0$d == $minoutrun ]; then
+                    baseRun=${{block[$c]}}
+                fi
+                let c=$[$c+1]
+            done
+            # echo $baseRun
+
+            3dbucket -prefix epi_vr_base ${{baseRun}}_blip+orig"[${{minouttr}}]"
+            """.format(
+                work_dir
+            )
+        )
+
+    h_cmd = f"source {vr_script}"
+    if test_mode:
+        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "vrbase")
+    else:
+        func_afni(h_cmd)
+
+# %%
+# --- Step 4: Calc, Perfrom normalization
