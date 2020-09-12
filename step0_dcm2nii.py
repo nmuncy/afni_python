@@ -83,22 +83,17 @@ def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
                     + "_"
                     + sess
                     + "_"
-                    + "task-study"
+                    + "task-vCAT"
                     + "_run-"
                     + j.split("_")[-1]
-                    + "_bold.nii.gz"
+                    + "_bold"
                 )
             elif scan_dict[i] == "fmap":
                 h_out_str = (
-                    subj
-                    + "_"
-                    + sess
-                    + "_acq-func_dir-"
-                    + j.split("_")[-1]
-                    + "_epi.nii.gz"
+                    subj + "_" + sess + "_acq-func_dir-" + j.split("_")[-1] + "_epi"
                 )
             elif scan_dict[i] == "anat":
-                h_out_str = subj + "_" + sess + "_T1w.nii.gz"
+                h_out_str = subj + "_" + sess + "_T1w"
 
             if not os.path.exists(os.path.join(h_out_dir, h_out_str)):
                 h_cmd = f"""
