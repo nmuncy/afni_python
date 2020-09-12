@@ -1,6 +1,8 @@
 # --- Notes:
 #
-# TODO: resolve the multiple T1w issue
+# TODO:
+#   1) resolve the multiple T1w issue
+#   2) update h_scan_dict[func] to hold task name, reflect in code
 
 
 import os
