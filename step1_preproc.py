@@ -46,14 +46,15 @@ if not os.path.exists(work_dir):
 
 
 # Submit jobs to slurm
+#   Note: len(h_str) < 8
 def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
     full_name = h_sub + "_" + h_ses + "_" + h_str
     sbatch_job = f"sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
         -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
+        --account iacc_madlab --qos pq_madlab \
         --wrap='module load afni-20.2.06 \n {command}'"
-    # --account iacc_madlab --qos pq_madlab \
 
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
@@ -327,12 +328,19 @@ if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
 
 # %%
 # --- Step 4: Calc, Perfrom normalization
+#
+# This step will perform the rigid alignments of T1-EPI (A)
+#   EPI-EPI base volume (B), and non-linear diffeomorphic of T1-Template (C).
+#
+# It will then concatenate these warp matrices, and warp EPI data from
+#   raw/native space to template space via W=A'+B+C. Thus, only one
+#   interpolation of the epi data occurs.
 
+# Calculate T1-EPI rigid, T1-Template diffeo
 h_cmd = f"""
     template=~/bin/Templates/vold2_mni/vold2_mni_brain+tlrc
     cd {work_dir}
 
-    # calc align of epi/anat
     align_epi_anat.py \\
         -anat2epi \\
         -anat struct+orig \\
@@ -345,7 +353,6 @@ h_cmd = f"""
         -volreg off \\
         -tshift off
 
-    # calc non-linear warp
     auto_warp.py -base $template -input struct_ns+orig -skull_strip_input no
     3dbucket -prefix struct_ns awpy/struct_ns.aw.nii*
     cp awpy/anat.un.aff.Xat.1D .
@@ -356,3 +363,67 @@ if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
         func_sbatch(h_cmd, 4, 4, 4, subj, sess, "diffeo")
     else:
         func_afni(h_cmd)
+
+
+# %%
+# Calculate volreg for e/run
+for i in epi_dict.keys():
+
+    h_cmd = f"""
+        cd {work_dir}
+
+        3dvolreg -verbose \
+        -zpad 1 \
+        -base epi_vr_base+orig \
+        -1Dfile dfile.{i}.1D \
+        -prefix {i}_volreg \
+        -cubic \
+        -1Dmatrix_save mat.{i}.vr.aff12.1D \
+        {i}_blip+orig
+    """
+    if not os.path.exists(os.path.join(work_dir, f"mat.{i}.vr.aff12.1D")):
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "volreg")
+        else:
+            func_afni(h_cmd)
+
+
+# %%
+# Concat calcs, warp EPI. Make, warp intersection mask
+for i in epi_dict.keys():
+
+    h_cmd = f"""
+        cd {work_dir}
+        
+        cat_matvec -ONELINE \
+        anat.un.aff.Xat.1D \
+        struct_al_junk_mat.aff12.1D -I \
+        mat.{i}.vr.aff12.1D > mat.{i}.warp.aff12.1D
+
+        gridSize=`3dinfo -di {i}+orig`
+
+        3dNwarpApply -master struct_ns+tlrc \
+        -dxyz $gridSize \
+        -source {i}_blip+orig \
+        -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+        -prefix {i}_warp
+
+        3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
+
+        3dNwarpApply -master struct_ns+tlrc \
+        -dxyz $gridSize \
+        -source tmp_{i}_mask+orig \
+        -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+        -interp cubic \
+        -ainterp NN -quiet \
+        -prefix {i}_mask_warped
+
+        3dTstat -min -prefix tmp_{i}_min {i}_mask_warped+tlrc
+    """
+    if not os.path.exists(os.path.join(work_dir, f"{i}_warp+tlrc.HEAD")):
+        if test_mode:
+            func_sbatch(h_cmd, 4, 4, 4, subj, sess, "warp")
+        else:
+            func_afni(h_cmd)
+
+# %%
