@@ -80,7 +80,8 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
 # Submit afni subprocess
 # TODO: This function is untested
-def func_afni(cmd):
+def func_afni(h_cmd):
+    cmd = f"module load afni-20.2.06 \n {h_cmd}"
     afni_job = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
     afni_out, afni_err = afni_job.communicate()
     return afni_err
@@ -93,6 +94,9 @@ def func_afni(cmd):
 #
 # To account for different num of fmaps, will
 #   produce AP, PA fmap per run.
+#
+# Make epi_dict for later use, like pulling header info
+#   or looping through runs.
 
 # struct
 struct_nii = os.path.join(data_dir, "anat", "{}_{}_T1w.nii.gz".format(subj, sess))
@@ -133,8 +137,7 @@ for i in range(len(epi_list)):
 
 # %%
 # fmap
-#
-# In EMU, account for potential multiple fmaps, use IntendedFor
+#   In EMU, account for potential multiple fmaps, use IntendedFor
 json_list = [
     x
     for x in os.listdir(os.path.join(data_dir, "fmap"))
@@ -268,9 +271,14 @@ for i in epi_dict.keys():
 # %%
 # --- Step 3: Make volreg base
 #
-# If data is not time shifted, do so before determining volreg_base.
+# 1) The volreg base (epi_vr_base) is the single volume in entire experiment
+#   phase with the smallest number of outlier volumes.
+#
+# Note: If data is not time shifted, do so before determining volreg_base.
+#
 # Also, it was easier to write a small bash script due to the multiple
 #   afni commands.
+
 
 out_list = [
     os.path.join(work_dir, x)
@@ -364,8 +372,6 @@ if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
     else:
         func_afni(h_cmd)
 
-
-# %%
 # Calculate volreg for e/run
 for i in epi_dict.keys():
 
@@ -394,7 +400,7 @@ for i in epi_dict.keys():
 
     h_cmd = f"""
         cd {work_dir}
-        
+
         cat_matvec -ONELINE \
         anat.un.aff.Xat.1D \
         struct_al_junk_mat.aff12.1D -I \
@@ -422,8 +428,19 @@ for i in epi_dict.keys():
     """
     if not os.path.exists(os.path.join(work_dir, f"{i}_warp+tlrc.HEAD")):
         if test_mode:
-            func_sbatch(h_cmd, 4, 4, 4, subj, sess, "warp")
+            func_sbatch(h_cmd, 1, 4, 4, subj, sess, "warp")
         else:
             func_afni(h_cmd)
 
 # %%
+# Make extents mask, remove bad volumes
+for i in epi_dict.keys():
+    if len(epi_dict.keys()) > 1:
+        h_cmd = f"""
+            3dMean -datum short -prefix {work_dir}/tmp_mean_{i} {work_dir}/tmp_{i}_min+tlrc.HEAD
+            3dcalc -a {work_dir}/tmp_mean_{i}+tlrc -expr 'step(a-0.999)' -prefix {work_dir}/{i}_epiExt_mask
+            3dcalc -a {work_dir}/{i}_warp+tlrc \
+                -b {work_dir}/{i}_epiExt_mask+tlrc \
+                -expr 'a*b' \
+                -prefix {work_dir}/{i}_volreg_clean
+        """
