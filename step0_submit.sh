@@ -12,8 +12,8 @@ mkdir -p $outDir
 refDir=/home/data/madlab/Mattfeld_vCAT/sourcedata
 subjList=(`ls ${refDir}/*tar.gz`)
 
-# for i in ${subjList[@]}; do
-for i in ${subjList[0]}; do
+for i in ${subjList[@]}; do
+# for i in ${subjList[2]}; do
 
     file=${i##*/}
     echo $file

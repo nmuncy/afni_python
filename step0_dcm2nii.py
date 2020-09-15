@@ -21,8 +21,8 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
     sbatch_job = f"sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
         -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
+        --account iacc_madlab --qos pq_madlab \
         --wrap='{command}'"
-    # --account iacc_madlab --qos pq_madlab \
 
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()

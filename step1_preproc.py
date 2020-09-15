@@ -17,6 +17,7 @@ import subprocess
 import fnmatch
 import math
 import time
+import codecs
 
 
 # %%
@@ -56,6 +57,7 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
         --account iacc_madlab --qos pq_madlab \
         --wrap='module load afni-20.2.06 \n {command}'"
 
+    print(sbatch_job)
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
 
@@ -395,7 +397,7 @@ for i in epi_dict.keys():
 
 
 # %%
-# Concat calcs, warp EPI. Make, warp intersection mask
+# Concat calcs, warp EPI. Make mask
 for i in epi_dict.keys():
 
     h_cmd = f"""
@@ -433,14 +435,19 @@ for i in epi_dict.keys():
             func_afni(h_cmd)
 
 # %%
-# Make extents mask, remove bad volumes
-for i in epi_dict.keys():
-    if len(epi_dict.keys()) > 1:
-        h_cmd = f"""
-            3dMean -datum short -prefix {work_dir}/tmp_mean_{i} {work_dir}/tmp_{i}_min+tlrc.HEAD
-            3dcalc -a {work_dir}/tmp_mean_{i}+tlrc -expr 'step(a-0.999)' -prefix {work_dir}/{i}_epiExt_mask
-            3dcalc -a {work_dir}/{i}_warp+tlrc \
-                -b {work_dir}/{i}_epiExt_mask+tlrc \
-                -expr 'a*b' \
-                -prefix {work_dir}/{i}_volreg_clean
-        """
+# Determine minimum value, make mask
+h_cmd = f"""
+    cd {work_dir}
+    3dMean -datum short -prefix tmp_mean tmp_run-{{1..{len(epi_dict.keys())}}}_{phase}_min+tlrc
+    3dcalc -a tmp_mean+tlrc -expr \'step\(a-0.999\)\' -prefix {phase}_minVal_mask
+"""
+# print(h_cmd)
+if not os.path.exists(os.path.join(work_dir, f"{phase}_minVal_mask+tlrc.HEAD")):
+    if test_mode:
+        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "minVal")
+    else:
+        func_afni(h_cmd)
+
+
+# %%
+# --- Step 5: Scale data
