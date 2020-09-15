@@ -51,11 +51,13 @@ if not os.path.exists(work_dir):
 def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
     full_name = h_sub + "_" + h_ses + "_" + h_str
-    sbatch_job = f"sbatch \
+    sbatch_job = f"""
+        sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
         -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
         --account iacc_madlab --qos pq_madlab \
-        --wrap='module load afni-20.2.06 \n {command}'"
+        --wrap="module load afni-20.2.06 \n {command}"
+    """
 
     print(sbatch_job)
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
@@ -439,7 +441,7 @@ for i in epi_dict.keys():
 h_cmd = f"""
     cd {work_dir}
     3dMean -datum short -prefix tmp_mean tmp_run-{{1..{len(epi_dict.keys())}}}_{phase}_min+tlrc
-    3dcalc -a tmp_mean+tlrc -expr \'step\(a-0.999\)\' -prefix {phase}_minVal_mask
+    3dcalc -a tmp_mean+tlrc -expr 'step(a-0.999)' -prefix {phase}_minVal_mask
 """
 # print(h_cmd)
 if not os.path.exists(os.path.join(work_dir, f"{phase}_minVal_mask+tlrc.HEAD")):
