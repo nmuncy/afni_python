@@ -347,6 +347,8 @@ if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
 # It will then concatenate these warp matrices, and warp EPI data from
 #   raw/native space to template space via W=A'+B+C. Thus, only one
 #   interpolation of the epi data occurs.
+#
+# Will also censor volumes that have outlier, to not bias scaling
 
 # Calculate T1-EPI rigid, T1-Template diffeo
 h_cmd = f"""
@@ -397,9 +399,8 @@ for i in epi_dict.keys():
         else:
             func_afni(h_cmd)
 
-
-# %%
-# Concat calcs, warp EPI. Make mask
+# Concat calcs, warp EPI. Make mask.
+#   Could be combined with loop above
 for i in epi_dict.keys():
 
     h_cmd = f"""
@@ -436,20 +437,57 @@ for i in epi_dict.keys():
         else:
             func_afni(h_cmd)
 
-# %%
 # Determine minimum value, make mask
 h_cmd = f"""
     cd {work_dir}
     3dMean -datum short -prefix tmp_mean tmp_run-{{1..{len(epi_dict.keys())}}}_{phase}_min+tlrc
     3dcalc -a tmp_mean+tlrc -expr 'step(a-0.999)' -prefix {phase}_minVal_mask
 """
-# print(h_cmd)
 if not os.path.exists(os.path.join(work_dir, f"{phase}_minVal_mask+tlrc.HEAD")):
     if test_mode:
         func_sbatch(h_cmd, 1, 1, 1, subj, sess, "minVal")
     else:
         func_afni(h_cmd)
 
+# make clean data
+h_mask = os.path.join(work_dir, f"{phase}_minVal_mask+tlrc")
+
+for i in epi_dict.keys():
+    h_warp = os.path.join(work_dir, f"{i}_warp+tlrc")
+    h_clean = os.path.join(work_dir, f"{i}_volreg_clean")
+    h_cmd = f"3dcalc -a {h_warp} -b {h_mask} -expr 'a*b' -prefix {h_clean}"
+
+    if not os.path.exists(h_clean + "+tlrc.HEAD"):
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "clean")
+        else:
+            func_afni(h_cmd)
+
 
 # %%
-# --- Step 5: Scale data
+# --- Step 5: Make masks
+#
+#
+
+# # Make EPI-T1 union mask (mask_epi_anat)
+# if not os.path.exists(os.path.join(work_dir, "mask_epi_anat+tlrc.HEAD")):
+
+#     h_cmd = f"""
+#         cd {work_dir}
+#         for j in run*volreg_clean+tlrc.HEAD; do
+#             3dAutomask -prefix tmp_mask.${{j%_vol*}} ${{j%.*}}
+#         done
+#         3dmask_tool -inputs tmp_mask.*+tlrc.HEAD -union -prefix tmp_mask_allRuns
+
+#         3dresample -master tmp_mask_allRuns+tlrc -input struct_ns+tlrc -prefix tmp_anat_resamp
+#         3dmask_tool -dilate_input 5 -5 -fill_holes -input tmp_anat_resamp+tlrc -prefix tmp_mask_struct
+
+#         3dmask_tool -input tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc -inter -prefix mask_epi_anat
+#         3dABoverlap -no_automask tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc | tee out.mask_ae_overlap.txt
+#     """
+#     if test_mode:
+#         func_sbatch(h_cmd, 1, 1, 1, subj, sess, "union")
+#     else:
+#         func_afni(h_cmd)
+
+# %%
