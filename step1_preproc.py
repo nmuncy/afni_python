@@ -467,7 +467,14 @@ for i in epi_dict.keys():
 # %%
 # --- Step 5: Make masks
 #
+# 1) Make a union mask, where sufficient signal exists for both T1w
+#       and T2*w at each voxel for analyses. Incorporated at the
+#       group-level analysis.
 #
+# 2) Make tissue masks. The WM mask will be used later to derive
+#       nuissance regressors for the REML.
+#       Note: this references some custom masks, and is based in
+#           atropos rather than in AFNIs tiss seg protocol.
 
 # Make EPI-T1 union mask (mask_epi_anat)
 run_list = [
@@ -507,65 +514,32 @@ if not os.path.exists(os.path.join(work_dir, "mask_epi_anat+tlrc.HEAD")):
 
 # Make tissue-class masks
 #   I like Atropos better than AFNI's way, so use those priors
+atropos_dict = {1: "CSF", 2: "GMc", 3: "WM", 4: "GMs"}
+atropos_dir = "~/bin/Templates/vold2_mni/priors_ACT"
 h_tcin = os.path.join(work_dir, run_list[0])
-tc_script = os.path.join(work_dir, "do_tissClass.sh")
-with open(tc_script, "w") as script:
-    script.write(
-        f"""
-        #!/bin/bash
-        module load c3d/1.0.0
 
-        priorDir=~/bin/Templates/vold2_mni/priors_ACT
-        tiss=(CSF GMc WM GMs)
-        prior=(Prior{{1..4}})
-        tissN=${{#tiss[@]}}
+for i in atropos_dict:
+    h_tiss = atropos_dict[i]
+    if not os.path.exists(
+        os.path.join(work_dir, f"final_mask_{h_tiss}_eroded+tlrc.HEAD")
+    ):
+        h_cmd = f"""
+            module load c3d/1.0.0
+            cd {work_dir}
 
-        cd {work_dir}
-        if [ ! -f final_mask_GM_eroded+tlrc.HEAD ]; then
-
-            # copy, combine priors
-            c=0; while [ $c -lt $tissN ]; do
-                cp ${{priorDir}}/${{prior[$c]}}.nii.gz ./tmp_${{tiss[$c]}}.nii.gz
-                let c=$[$c+1]
-            done
-            c3d tmp_GMc.nii.gz tmp_GMs.nii.gz -add -o tmp_GM.nii.gz
-
-            # resample, erode
-            for i in CSF GM WM; do
-                c3d tmp_${{i}}.nii.gz -thresh 0.3 1 1 0 -o tmp_${{i}}_bin.nii.gz
-                3dresample -master {h_tcin} -rmode NN -input tmp_${{i}}_bin.nii.gz \
-                    -prefix final_mask_${{i}}+tlrc
-                3dmask_tool -input tmp_${{i}}_bin.nii.gz -dilate_input -1 \
-                    -prefix tmp_mask_${{i}}_eroded
-                3dresample -master {h_tcin} -rmode NN -input tmp_mask_${{i}}_eroded+orig \
-                    -prefix final_mask_${{i}}_eroded
-            done
-        fi
+            c3d {atropos_dir}/Prior{i}.nii.gz -thresh 0.3 1 1 0 \
+                -o tmp_{h_tiss}_bin.nii.gz
+            3dresample -master {h_tcin} -rmode NN -input tmp_{h_tiss}_bin.nii.gz \
+                -prefix final_mask_{h_tiss}+tlrc
+            3dmask_tool -input tmp_{h_tiss}_bin.nii.gz -dilate_input -1 \
+                -prefix tmp_mask_{h_tiss}_eroded
+            3dresample -master {h_tcin} -rmode NN -input tmp_mask_{h_tiss}_eroded+orig \
+                -prefix final_mask_{h_tiss}_eroded
         """
-    )
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "atropos")
+        else:
+            func_afni(h_cmd)
 
-
-# if [ ! -f final_mask_GM_eroded+tlrc.HEAD ]; then
-
-# 	# get priors
-# 	tiss=(CSF GMc WM GMs)
-# 	prior=(Prior{1..4})
-# 	tissN=${#tiss[@]}
-
-# 	c=0; while [ $c -lt $tissN ]; do
-# 		cp ${priorDir}/${prior[$c]}.nii.gz ./tmp_${tiss[$c]}.nii.gz
-# 		let c=$[$c+1]
-# 	done
-# 	c3d tmp_GMc.nii.gz tmp_GMs.nii.gz -add -o tmp_GM.nii.gz
-
-# 	# resample, erode
-# 	for i in CSF GM WM; do
-
-# 		c3d tmp_${i}.nii.gz -thresh 0.3 1 1 0 -o tmp_${i}_bin.nii.gz
-# 		3dresample -master ${block[0]}_volreg_clean+tlrc -rmode NN -input tmp_${i}_bin.nii.gz -prefix final_mask_${i}+tlrc
-# 		3dmask_tool -input tmp_${i}_bin.nii.gz -dilate_input -1 -prefix tmp_mask_${i}_eroded
-# 		3dresample -master ${block[0]}_volreg_clean+tlrc -rmode NN -input tmp_mask_${i}_eroded+orig -prefix final_mask_${i}_eroded
-# 	done
-# fi
 
 # %%
