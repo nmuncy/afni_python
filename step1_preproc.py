@@ -5,9 +5,8 @@
 #       all epi scans in session pertain to phase
 #
 # TODO:
-#   1) Update wait function to wait for job name rather than job number
-#   2) Update template?
-#   3) Test various functions/syntax
+#   1) Update template?
+#   2) Make main function
 
 
 import json
@@ -543,3 +542,37 @@ for i in atropos_dict:
 
 
 # %%
+# --- Step 6: Scale data
+#
+# Data is scaled by mean signal
+for i in epi_dict.keys():
+    if not os.path.exists(os.path.join(work_dir, f"{i}_scale+tlrc.HEAD")):
+        h_cmd = f"""
+            cd {work_dir}
+            3dTstat -prefix tmp_tstat_{i} {i}_volreg_clean+tlrc
+            3dcalc \
+                -a {i}_volreg_clean+tlrc \
+                -b tmp_tstat_{i}+tlrc \
+                -c {h_mask} \
+                -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
+                -prefix {i}_scale
+        """
+        if test_mode:
+            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "scale")
+        else:
+            func_afni(h_cmd)
+
+
+# for j in ${block[@]}; do
+# 	if [ ! -f ${j}_scale+tlrc.HEAD ]; then
+
+# 		3dTstat -prefix tmp_tstat_$j ${j}_volreg_clean+tlrc
+
+# 		3dcalc \
+# 		-a ${j}_volreg_clean+tlrc \
+# 		-b tmp_tstat_${j}+tlrc \
+# 		-c ${j}_epiExt_mask+tlrc \
+# 		-expr 'c * min(200, a/b*100)*step(a)*step(b)' \
+# 		-prefix ${j}_scale
+# 	fi
+# done
