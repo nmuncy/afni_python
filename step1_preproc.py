@@ -385,13 +385,13 @@ for i in epi_dict.keys():
         cd {work_dir}
 
         3dvolreg -verbose \
-        -zpad 1 \
-        -base epi_vr_base+orig \
-        -1Dfile dfile.{i}.1D \
-        -prefix {i}_volreg \
-        -cubic \
-        -1Dmatrix_save mat.{i}.vr.aff12.1D \
-        {i}_blip+orig
+            -zpad 1 \
+            -base epi_vr_base+orig \
+            -1Dfile dfile.{i}.1D \
+            -prefix {i}_volreg \
+            -cubic \
+            -1Dmatrix_save mat.{i}.vr.aff12.1D \
+            {i}_blip+orig
     """
     if not os.path.exists(os.path.join(work_dir, f"mat.{i}.vr.aff12.1D")):
         if test_mode:
@@ -407,27 +407,27 @@ for i in epi_dict.keys():
         cd {work_dir}
 
         cat_matvec -ONELINE \
-        anat.un.aff.Xat.1D \
-        struct_al_junk_mat.aff12.1D -I \
-        mat.{i}.vr.aff12.1D > mat.{i}.warp.aff12.1D
+            anat.un.aff.Xat.1D \
+            struct_al_junk_mat.aff12.1D -I \
+            mat.{i}.vr.aff12.1D > mat.{i}.warp.aff12.1D
 
         gridSize=`3dinfo -di {i}+orig`
 
         3dNwarpApply -master struct_ns+tlrc \
-        -dxyz $gridSize \
-        -source {i}_blip+orig \
-        -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
-        -prefix {i}_warp
+            -dxyz $gridSize \
+            -source {i}_blip+orig \
+            -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+            -prefix {i}_warp
 
         3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
 
         3dNwarpApply -master struct_ns+tlrc \
-        -dxyz $gridSize \
-        -source tmp_{i}_mask+orig \
-        -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
-        -interp cubic \
-        -ainterp NN -quiet \
-        -prefix {i}_mask_warped
+            -dxyz $gridSize \
+            -source tmp_{i}_mask+orig \
+            -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+            -interp cubic \
+            -ainterp NN -quiet \
+            -prefix {i}_mask_warped
 
         3dTstat -min -prefix tmp_{i}_min {i}_mask_warped+tlrc
     """
@@ -469,25 +469,103 @@ for i in epi_dict.keys():
 #
 #
 
-# # Make EPI-T1 union mask (mask_epi_anat)
-# if not os.path.exists(os.path.join(work_dir, "mask_epi_anat+tlrc.HEAD")):
+# Make EPI-T1 union mask (mask_epi_anat)
+run_list = [
+    x.split(".")[0]
+    for x in os.listdir(work_dir)
+    if fnmatch.fnmatch(x, "*volreg_clean+tlrc.HEAD")
+]
 
-#     h_cmd = f"""
-#         cd {work_dir}
-#         for j in run*volreg_clean+tlrc.HEAD; do
-#             3dAutomask -prefix tmp_mask.${{j%_vol*}} ${{j%.*}}
-#         done
-#         3dmask_tool -inputs tmp_mask.*+tlrc.HEAD -union -prefix tmp_mask_allRuns
+if not os.path.exists(os.path.join(work_dir, "mask_epi_anat+tlrc.HEAD")):
 
-#         3dresample -master tmp_mask_allRuns+tlrc -input struct_ns+tlrc -prefix tmp_anat_resamp
-#         3dmask_tool -dilate_input 5 -5 -fill_holes -input tmp_anat_resamp+tlrc -prefix tmp_mask_struct
+    for i in run_list:
+        h_mout = os.path.join(work_dir, f"tmp_mask.{i}")
+        h_min = os.path.join(work_dir, i)
+        if not os.path.exists(h_mout + ".HEAD"):
+            h_cmd = f"3dAutomask -prefix {h_mout} {h_min}"
+            if test_mode:
+                func_sbatch(h_cmd, 1, 1, 1, subj, sess, "mauto")
+            else:
+                func_afni(h_cmd)
 
-#         3dmask_tool -input tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc -inter -prefix mask_epi_anat
-#         3dABoverlap -no_automask tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc | tee out.mask_ae_overlap.txt
-#     """
-#     if test_mode:
-#         func_sbatch(h_cmd, 1, 1, 1, subj, sess, "union")
-#     else:
-#         func_afni(h_cmd)
+    h_cmd = f"""
+        cd {work_dir}
+        3dmask_tool -inputs tmp_mask.*+tlrc.HEAD -union -prefix tmp_mask_allRuns
+        3dresample -master tmp_mask_allRuns+tlrc -input struct_ns+tlrc \
+            -prefix tmp_anat_resamp
+        3dmask_tool -dilate_input 5 -5 -fill_holes -input tmp_anat_resamp+tlrc \
+            -prefix tmp_mask_struct
+        3dmask_tool -input tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc -inter \
+            -prefix mask_epi_anat
+        3dABoverlap -no_automask tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc | \
+            tee out.mask_ae_overlap.txt
+    """
+    if test_mode:
+        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "union")
+    else:
+        func_afni(h_cmd)
+
+# Make tissue-class masks
+#   I like Atropos better than AFNI's way, so use those priors
+h_tcin = os.path.join(work_dir, run_list[0])
+tc_script = os.path.join(work_dir, "do_tissClass.sh")
+with open(tc_script, "w") as script:
+    script.write(
+        f"""
+        #!/bin/bash
+        module load c3d/1.0.0
+
+        priorDir=~/bin/Templates/vold2_mni/priors_ACT
+        tiss=(CSF GMc WM GMs)
+        prior=(Prior{{1..4}})
+        tissN=${{#tiss[@]}}
+
+        cd {work_dir}
+        if [ ! -f final_mask_GM_eroded+tlrc.HEAD ]; then
+
+            # copy, combine priors
+            c=0; while [ $c -lt $tissN ]; do
+                cp ${{priorDir}}/${{prior[$c]}}.nii.gz ./tmp_${{tiss[$c]}}.nii.gz
+                let c=$[$c+1]
+            done
+            c3d tmp_GMc.nii.gz tmp_GMs.nii.gz -add -o tmp_GM.nii.gz
+
+            # resample, erode
+            for i in CSF GM WM; do
+                c3d tmp_${{i}}.nii.gz -thresh 0.3 1 1 0 -o tmp_${{i}}_bin.nii.gz
+                3dresample -master {h_tcin} -rmode NN -input tmp_${{i}}_bin.nii.gz \
+                    -prefix final_mask_${{i}}+tlrc
+                3dmask_tool -input tmp_${{i}}_bin.nii.gz -dilate_input -1 \
+                    -prefix tmp_mask_${{i}}_eroded
+                3dresample -master {h_tcin} -rmode NN -input tmp_mask_${{i}}_eroded+orig \
+                    -prefix final_mask_${{i}}_eroded
+            done
+        fi
+        """
+    )
+
+
+# if [ ! -f final_mask_GM_eroded+tlrc.HEAD ]; then
+
+# 	# get priors
+# 	tiss=(CSF GMc WM GMs)
+# 	prior=(Prior{1..4})
+# 	tissN=${#tiss[@]}
+
+# 	c=0; while [ $c -lt $tissN ]; do
+# 		cp ${priorDir}/${prior[$c]}.nii.gz ./tmp_${tiss[$c]}.nii.gz
+# 		let c=$[$c+1]
+# 	done
+# 	c3d tmp_GMc.nii.gz tmp_GMs.nii.gz -add -o tmp_GM.nii.gz
+
+# 	# resample, erode
+# 	for i in CSF GM WM; do
+
+# 		c3d tmp_${i}.nii.gz -thresh 0.3 1 1 0 -o tmp_${i}_bin.nii.gz
+# 		3dresample -master ${block[0]}_volreg_clean+tlrc -rmode NN -input tmp_${i}_bin.nii.gz -prefix final_mask_${i}+tlrc
+# 		3dmask_tool -input tmp_${i}_bin.nii.gz -dilate_input -1 -prefix tmp_mask_${i}_eroded
+# 		3dresample -master ${block[0]}_volreg_clean+tlrc -rmode NN -input tmp_mask_${i}_eroded+orig -prefix final_mask_${i}_eroded
+# 	done
+# fi
 
 # %%
