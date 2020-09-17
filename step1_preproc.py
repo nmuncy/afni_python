@@ -5,8 +5,10 @@
 #       all epi scans in session pertain to phase
 #
 # TODO:
-#   1) Update template?
-#   2) Add stops after each step
+#   1) Update template? Referencing special template/priors
+#   2) Change func_sbatch stdout/err capture
+#   3) Due to double quotes in sbatch command, verify that "$" is being
+#       interpreted
 
 
 import json
@@ -16,14 +18,13 @@ import subprocess
 import fnmatch
 import math
 import time
-import codecs
 
 
 # Submit jobs to slurm
 #   Note: len(h_str) < 8
-def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str, work_dir):
+def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
 
-    full_name = f"{work_dir}/{h_sub}_{h_ses}_{h_str}"
+    full_name = f"{work_dir}/sbatch_writeOut_{h_str}"
     sbatch_job = f"""
         sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
@@ -57,28 +58,43 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str, wor
 # %%
 def func_preproc(data_dir, work_dir, subj, sess, phase):
 
-    # --- Step 1: Copy data into work_dir
-    #
-    # Get func, anat, fmap data. Rename appropriately.
-    #
-    # To account for different num of fmaps, will
-    #   produce AP, PA fmap per run.
-    #
-    # Make epi_dict for later use, like pulling header info
-    #   or looping through runs.
+    """
+    Step 1: Copy data into work_dir
+
+    Get func, anat, fmap data. Rename appropriately.
+
+    To account for different num of fmaps, will
+    produce AP, PA fmap per run.
+
+    Make epi_dict for later use, like pulling header info
+    or looping through runs.
+    """
+
+    # # For testing
+    # subj = "sub-005"
+    # sess = "ses-S1"
+    # phase = "vCAT"
+
+    # par_dir = "/scratch/madlab/nate_vCAT"
+    # data_dir = os.path.join(par_dir, "dset", subj, sess)
+    # work_dir = os.path.join(par_dir, "derivatives", subj, sess)
+    # atlas_dir = "TODO"
+
+    # if not os.path.exists(work_dir):
+    #     os.makedirs(work_dir)
 
     # struct
     struct_nii = os.path.join(data_dir, "anat", "{}_{}_T1w.nii.gz".format(subj, sess))
     struct_raw = os.path.join(work_dir, "struct+orig")
     if not os.path.exists(struct_raw + ".HEAD"):
         h_cmd = "3dcopy {} {}".format(struct_nii, struct_raw)
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "struct", work_dir)
+        func_sbatch(h_cmd, 1, 1, 1, "struct", work_dir)
 
     # epi - only task, not rsFMRI
     epi_list = [
         epi
         for epi in os.listdir(os.path.join(data_dir, "func"))
-        if fnmatch.fnmatch(epi, "*task-vCAT*.nii.gz")
+        if fnmatch.fnmatch(epi, f"*task-{phase}*.nii.gz")
     ]
 
     # start dict for header info
@@ -95,7 +111,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
 
         if not os.path.exists(epi_raw + ".HEAD"):
             h_cmd = "3dcopy {} {}".format(epi_nii, epi_raw)
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "epi", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "epi", work_dir)
 
     # %%
     # fmap
@@ -128,7 +144,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
 
         if not os.path.exists(fmap_raw + ".HEAD"):
             h_cmd = "3dcopy {} {}".format(fmap_nii, fmap_raw)
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "fmap", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "fmap", work_dir)
 
     # Make fmap for each epi run
     epi_len = len(epi_list) + 1
@@ -153,57 +169,68 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         exit
 
     # %%
-    # --- Step 2: Detect outliers voxels, blip correct
-    #
-    # 1) Determine the proportion of voxels per volume that have outlier signal.
-    #       Censor volumes that exceed limit.
-    #
-    # 2) Correct for signal fallout using fmap. This approach is taken from
-    #       afni_proc. It uses the fmap to "unwarp" the run epi.
+    """
+    Step 2: Detect outliers voxels, blip correct
+
+    1) Determine the proportion of voxels per volume that have outlier signal.
+        Censor volumes that exceed limit.
+
+    2) Correct for signal fallout using fmap. This approach is taken from
+        afni_proc. It uses the fmap to "unwarp" the run epi.
+    """
 
     for i in epi_dict.keys():
 
         # determine polort arg, file strings, find outliers
-        h_fileA = "outcount." + i + ".1D"
-        h_fileB = "out.cen." + i + ".1D"
+        h_cmd = f"module load afni-20.2.06 \n cd {work_dir} \n 3dinfo -tr {i}+orig"
+        h_tr = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+        h_len_tr = h_tr.communicate()[0]
+        len_tr = h_len_tr.decode("utf-8").strip()
 
-        if not os.path.exists(h_fileB):
+        h_cmd = f"module load afni-20.2.06 \n cd {work_dir} \n 3dinfo -ntimes {i}+orig"
+        h_nvol = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+        h_nvol_out = h_nvol.communicate()[0]
+        num_tr = h_nvol_out.decode("utf-8").strip()
+
+        pol = 1 + math.ceil((float(len_tr) * float(num_tr)) / 150)
+        h_fileA = f"outcount.{i}.1D"
+        h_fileB = f"out.cen.{i}.1D"
+
+        if not os.path.exists(os.path.join(work_dir, h_fileB)):
             h_cmd = f"""
                 cd {work_dir}
-                len_tr=`3dinfo -tr {i}+orig`
-                pol_time=$(echo $(echo $hold*$len_tr | bc)/150 | bc -l)
-                pol=$((1 + `printf "%.0f" $pol_time`))
-                3dToutcount -automask -fraction -polort $pol \
+                3dToutcount -automask -fraction -polort {pol} \
                     -legendre {i}+orig > {h_fileA}
                 1deval -a {h_fileA} -expr '1-step(a-0.1)' > {h_fileB}
             """
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "outlier", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "outlier", work_dir)
 
         h_run = i.split("_")[0]
         for j in ["Forward", "Reverse"]:
 
             # create median datasets and masks
-            h_blip_raw = os.path.join(work_dir, "blip_" + h_run + "_" + j)
-            h_blip1 = os.path.join(work_dir, "tmp_blip_med_" + h_run + "_" + j)
-            h_blip2 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_" + j)
+            h_blip_raw = f"blip_{h_run}_{j}"
+            h_blip1 = f"tmp_blip_med_{h_run}_{j}"
+            h_blip2 = f"tmp_blip_med_masked_{h_run}_{j}"
 
-            if not os.path.exists(h_blip2 + "+orig.HEAD"):
+            if not os.path.exists(os.path.join(work_dir, f"{h_blip2}+orig.HEAD")):
                 h_cmd = f"""
+                    cd {work_dir}
                     3dTstat -median -prefix {h_blip1} {h_blip_raw}+orig
                     3dAutomask -apply_prefix {h_blip2} {h_blip1}+orig
                 """
-                func_sbatch(h_cmd, 1, 1, 1, subj, sess, "fmap_med", work_dir)
+                func_sbatch(h_cmd, 1, 1, 1, "fmap_med", work_dir)
 
         # comput midpoint warp, unwarp run data (solve for fall out), apply header
-        h_q1 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_Reverse")
-        h_q2 = os.path.join(work_dir, "tmp_blip_med_masked_" + h_run + "_Forward")
-        h_qout = os.path.join(work_dir, "tmp_blip_warp_" + h_run)
+        h_q1 = f"tmp_blip_med_masked_{h_run}_Reverse"
+        h_q2 = f"tmp_blip_med_masked_{h_run}_Forward"
+        h_qout = f"tmp_blip_warp_{h_run}"
+        h_blip_for = f"blip_{h_run}_Forward"
 
-        h_blip_for = os.path.join(work_dir, "blip_" + h_run + "_Forward")
-        h_run_epi = os.path.join(work_dir, i)
-
-        if not os.path.exists(h_run_epi + "_blip+orig.HEAD"):
+        if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
             h_cmd = f"""
+                cd {work_dir}
+                
                 3dQwarp -plusminus -pmNAMES Rev For \
                     -pblur 0.05 0.05 -blur -1 -1 \
                     -noweight -minpatch 9 \
@@ -212,11 +239,11 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                     -prefix {h_qout}
 
                 3dNwarpApply -quintic -nwarp {h_qout}_For_WARP+orig \
-                    -source {h_run_epi}+orig -prefix {h_run_epi}_blip
+                    -source {i}+orig -prefix {i}_blip
 
-                3drefit -atrcopy {h_blip_for}+orig IJK_TO_DICOM_REAL {h_run_epi}_blip+orig
+                3drefit -atrcopy {h_blip_for}+orig IJK_TO_DICOM_REAL {i}_blip+orig
             """
-            func_sbatch(h_cmd, 1, 4, 2, subj, sess, "qwarp", work_dir)
+            func_sbatch(h_cmd, 1, 4, 2, "qwarp", work_dir)
 
     # step check
     for i in epi_dict.keys():
@@ -225,15 +252,17 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             exit
 
     # %%
-    # --- Step 3: Make volreg base
-    #
-    # 1) The volreg base (epi_vr_base) is the single volume in entire experiment
-    #   phase with the smallest number of outlier volumes.
-    #
-    # Note: If data is not time shifted, do so before determining volreg_base.
-    #
-    # Also, it was easier to write a small bash script due to the multiple
-    #   afni commands.
+    """
+    Step 3: Make volreg base
+
+    1) The volreg base (epi_vr_base) is the single volume in entire experiment
+    phase with the smallest number of outlier volumes.
+
+    Note: If data is not time shifted, do so before determining volreg_base.
+
+    Also, it was easier to write a small bash script due to the multiple
+    afni commands.
+    """
 
     out_list = [
         os.path.join(work_dir, x)
@@ -284,7 +313,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             )
 
         h_cmd = f"source {vr_script}"
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "vrbase", work_dir)
+        func_sbatch(h_cmd, 1, 1, 1, "vrbase", work_dir)
 
     # step check
     if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
@@ -292,20 +321,22 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         exit
 
     # %%
-    # --- Step 4: Calc, Perfrom normalization
-    #
-    # This step will perform the rigid alignments of T1-EPI (A)
-    #   EPI-EPI base volume (B), and non-linear diffeomorphic of T1-Template (C).
-    #
-    # It will then concatenate these warp matrices, and warp EPI data from
-    #   raw/native space to template space via W=A'+B+C. Thus, only one
-    #   interpolation of the epi data occurs.
-    #
-    # Will also censor volumes that have outlier, to not bias scaling
+    """
+    Step 4: Calc, Perfrom normalization
+
+    This step will perform the rigid alignments of T1-EPI (A)
+    EPI-EPI base volume (B), and non-linear diffeomorphic of T1-Template (C).
+
+    It will then concatenate these warp matrices, and warp EPI data from
+    raw/native space to template space via W=A'+B+C. Thus, only one
+    interpolation of the epi data occurs.
+
+    Will also censor volumes that have outlier, to not bias scaling
+    """
 
     # Calculate T1-EPI rigid, T1-Template diffeo
+    atlas_brain = "~/bin/Templates/vold2_mni/vold2_mni_brain+tlrc"
     h_cmd = f"""
-        template=~/bin/Templates/vold2_mni/vold2_mni_brain+tlrc
         cd {work_dir}
 
         align_epi_anat.py \
@@ -320,13 +351,13 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             -volreg off \
             -tshift off
 
-        auto_warp.py -base $template -input struct_ns+orig -skull_strip_input no
+        auto_warp.py -base {atlas_brain} -input struct_ns+orig -skull_strip_input no
         3dbucket -prefix struct_ns awpy/struct_ns.aw.nii*
         cp awpy/anat.un.aff.Xat.1D .
         cp awpy/anat.un.aff.qw_WARP.nii .
     """
     if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
-        func_sbatch(h_cmd, 4, 4, 4, subj, sess, "diffeo", work_dir)
+        func_sbatch(h_cmd, 4, 4, 4, "diffeo", work_dir)
 
     # Calculate volreg for e/run
     for i in epi_dict.keys():
@@ -343,11 +374,17 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 {i}_blip+orig
         """
         if not os.path.exists(os.path.join(work_dir, f"mat.{i}.vr.aff12.1D")):
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "volreg", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "volreg", work_dir)
 
     # Concat calcs, warp EPI. Make mask.
     #   Could be combined with loop above
     for i in epi_dict.keys():
+
+        h_cmd = f"module load afni-20.2.06 \n cd {work_dir} \n 3dinfo -di {i}+orig"
+        h_gs = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+        h_gs_out = h_gs.communicate()[0]
+        grid_size = h_gs_out.decode("utf-8").strip()
+
         h_cmd = f"""
             cd {work_dir}
 
@@ -356,10 +393,8 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 struct_al_junk_mat.aff12.1D -I \
                 mat.{i}.vr.aff12.1D > mat.{i}.warp.aff12.1D
 
-            gridSize=`3dinfo -di {i}+orig`
-
             3dNwarpApply -master struct_ns+tlrc \
-                -dxyz $gridSize \
+                -dxyz {gridSize} \
                 -source {i}_blip+orig \
                 -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
                 -prefix {i}_warp
@@ -367,7 +402,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
 
             3dNwarpApply -master struct_ns+tlrc \
-                -dxyz $gridSize \
+                -dxyz {gridSize} \
                 -source tmp_{i}_mask+orig \
                 -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
                 -interp cubic \
@@ -377,7 +412,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dTstat -min -prefix tmp_{i}_min {i}_mask_warped+tlrc
         """
         if not os.path.exists(os.path.join(work_dir, f"{i}_warp+tlrc.HEAD")):
-            func_sbatch(h_cmd, 1, 4, 4, subj, sess, "warp", work_dir)
+            func_sbatch(h_cmd, 1, 4, 4, "warp", work_dir)
 
     # Determine minimum value, make mask
     h_cmd = f"""
@@ -386,7 +421,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         3dcalc -a tmp_mean+tlrc -expr 'step(a-0.999)' -prefix {phase}_minVal_mask
     """
     if not os.path.exists(os.path.join(work_dir, f"{phase}_minVal_mask+tlrc.HEAD")):
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "minVal", work_dir)
+        func_sbatch(h_cmd, 1, 1, 1, "minVal", work_dir)
 
     # make clean data
     h_mask = os.path.join(work_dir, f"{phase}_minVal_mask+tlrc")
@@ -397,7 +432,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         h_cmd = f"3dcalc -a {h_warp} -b {h_mask} -expr 'a*b' -prefix {h_clean}"
 
         if not os.path.exists(h_clean + "+tlrc.HEAD"):
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "clean", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "clean", work_dir)
 
     # step check
     for i in epi_dict.keys():
@@ -406,16 +441,18 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             exit
 
     # %%
-    # --- Step 5: Make masks
-    #
-    # 1) Make a union mask, where sufficient signal exists for both T1w
-    #       and T2*w at each voxel for analyses. Incorporated at the
-    #       group-level analysis.
-    #
-    # 2) Make tissue masks. The WM mask will be used later to derive
-    #       nuissance regressors for the REML.
-    #       Note: this references some custom masks, and is based in
-    #           atropos rather than in AFNIs tiss seg protocol.
+    """
+    Step 5: Make masks
+
+    1) Make a union mask, where sufficient signal exists for both T1w
+        and T2*w at each voxel for analyses. Incorporated at the
+        group-level analysis.
+
+    2) Make tissue masks. The WM mask will be used later to derive
+        nuissance regressors for the REML.
+        Note: this references some custom masks, and is based in
+            atropos rather than in AFNIs tiss seg protocol.
+    """
 
     # Make EPI-T1 union mask (mask_epi_anat)
     run_list = [
@@ -431,7 +468,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             h_min = os.path.join(work_dir, i)
             if not os.path.exists(h_mout + ".HEAD"):
                 h_cmd = f"3dAutomask -prefix {h_mout} {h_min}"
-                func_sbatch(h_cmd, 1, 1, 1, subj, sess, "mauto", work_dir)
+                func_sbatch(h_cmd, 1, 1, 1, "mauto", work_dir)
 
         h_cmd = f"""
             cd {work_dir}
@@ -445,7 +482,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dABoverlap -no_automask tmp_mask_allRuns+tlrc tmp_mask_struct+tlrc | \
                 tee out.mask_ae_overlap.txt
         """
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "union", work_dir)
+        func_sbatch(h_cmd, 1, 1, 1, "union", work_dir)
 
     # Make tissue-class masks
     #   I like Atropos better than AFNI's way, so use those priors
@@ -471,7 +508,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 3dresample -master {h_tcin} -rmode NN -input tmp_mask_{h_tiss}_eroded+orig \
                     -prefix final_mask_{h_tiss}_eroded
             """
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "atropos", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "atropos", work_dir)
 
     # step check
     if not os.path.exists(os.path.join(work_dir, "final_mask_WM_eroded+tlrc.HEAD")):
@@ -479,23 +516,23 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         exit
 
     # %%
-    # --- Step 6: Scale data
-    #
-    # Data is scaled by mean signal
+    """
+    Step 6: Scale data
+
+    Data is scaled by mean signal
+    """
 
     for i in epi_dict.keys():
         if not os.path.exists(os.path.join(work_dir, f"{i}_scale+tlrc.HEAD")):
             h_cmd = f"""
                 cd {work_dir}
                 3dTstat -prefix tmp_tstat_{i} {i}_volreg_clean+tlrc
-                3dcalc \
-                    -a {i}_volreg_clean+tlrc \
-                    -b tmp_tstat_{i}+tlrc \
-                    -c {h_mask} \
+                3dcalc -a {i}_volreg_clean+tlrc \
+                    -b tmp_tstat_{i}+tlrc -c {h_mask} \
                     -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
                     -prefix {i}_scale
             """
-            func_sbatch(h_cmd, 1, 1, 1, subj, sess, "scale", work_dir)
+            func_sbatch(h_cmd, 1, 1, 1, "scale", work_dir)
 
     # step check
     for i in epi_dict.keys():
@@ -504,10 +541,9 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             exit
 
 
+# %%
 def main():
-    # subj = "sub-005"
-    # sess = "ses-S1"
-    # phase = "vCAT"
+
     subj = str(sys.argv[1])
     sess = str(sys.argv[2])
     phase = str(sys.argv[3])
