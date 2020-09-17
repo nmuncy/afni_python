@@ -6,7 +6,7 @@
 #
 # TODO:
 #   1) Update template?
-#   2) Make main function
+#   2) Add stops after each step
 
 
 import json
@@ -147,6 +147,11 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             func_fmap(j, count)
             count += 1
 
+    # step check
+    if not os.path.exists(os.path.join(work_dir, f"run-1_{phase}+orig.HEAD")):
+        print("Check scan missing. Exiting.")
+        exit
+
     # %%
     # --- Step 2: Detect outliers voxels, blip correct
     #
@@ -213,6 +218,12 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             """
             func_sbatch(h_cmd, 1, 4, 2, subj, sess, "qwarp", work_dir)
 
+    # step check
+    for i in epi_dict.keys():
+        if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
+            print(f"File {i} missing. Exiting.")
+            exit
+
     # %%
     # --- Step 3: Make volreg base
     #
@@ -274,6 +285,11 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
 
         h_cmd = f"source {vr_script}"
         func_sbatch(h_cmd, 1, 1, 1, subj, sess, "vrbase", work_dir)
+
+    # step check
+    if not os.path.exists(os.path.join(work_dir, "epi_vr_base+orig.HEAD")):
+        print("VR base missing. Exiting.")
+        exit
 
     # %%
     # --- Step 4: Calc, Perfrom normalization
@@ -383,6 +399,12 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         if not os.path.exists(h_clean + "+tlrc.HEAD"):
             func_sbatch(h_cmd, 1, 1, 1, subj, sess, "clean", work_dir)
 
+    # step check
+    for i in epi_dict.keys():
+        if not os.path.exists(os.path.join(work_dir, f"{i}_volreg_clean+tlrc.HEAD")):
+            print(f"{i}_volreg_clean+tlrc missing. Exiting.")
+            exit
+
     # %%
     # --- Step 5: Make masks
     #
@@ -451,6 +473,11 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             """
             func_sbatch(h_cmd, 1, 1, 1, subj, sess, "atropos", work_dir)
 
+    # step check
+    if not os.path.exists(os.path.join(work_dir, "final_mask_WM_eroded+tlrc.HEAD")):
+        print("final_mask_WM_eroded+tlrc missing. Exiting.")
+        exit
+
     # %%
     # --- Step 6: Scale data
     #
@@ -469,6 +496,12 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                     -prefix {i}_scale
             """
             func_sbatch(h_cmd, 1, 1, 1, subj, sess, "scale", work_dir)
+
+    # step check
+    for i in epi_dict.keys():
+        if not os.path.exists(os.path.join(work_dir, f"{i}_scale+tlrc.HEAD")):
+            print(f"{i}_scale+tlrc missing. Exiting.")
+            exit
 
 
 def main():
