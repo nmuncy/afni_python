@@ -1,9 +1,19 @@
-# --- Notes:
-#
-# TODO:
-#   1) resolve the multiple T1w issue
-#   2) update h_scan_dict[func] to hold task name, reflect in code
+"""
+Notes:
 
+1) Will extract tarball from data_dir to source_dir, then make
+    NIfTI files in work_dir.
+
+2) Will organize work_dir in BIDS format.
+
+3) Gets submitted from wrapper script, will generate sbatch
+    subprocesses for each dcm2nii command.
+
+TODO:
+  1) resolve the multiple T1w issue
+  2) update h_scan_dict[func] to hold task name, reflect in code
+  3) update sbatch stdout/err write location
+"""
 
 import os
 import subprocess
@@ -14,7 +24,7 @@ import time
 import sys
 
 
-# Submit jobs to slurm
+# Submit jobs to slurm, wait for job to finish
 def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
     full_name = h_sub + "_" + h_ses + "_" + h_str
@@ -47,6 +57,8 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
 
 
 def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
+
+    # get paths, make output dirs
     sess = "ses-" + dcm_tar.split("-")[4].split(".")[0]
     subj = "sub-" + dcm_tar.split("-")[3]
     subj_dir = os.path.join(work_dir, subj, sess)
@@ -56,51 +68,48 @@ def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
         if not os.path.exists(i):
             os.makedirs(i)
 
+    # unzip tarball
     tar_ball = os.path.join(data_dir, dcm_tar)
     tar_out = dcm_tar.split(".")[0]
     if not os.path.exists(os.path.join(dcm_dir, tar_out)):
         h_cmd = f"tar -C {dcm_dir} -xzf {tar_ball}"
         func_sbatch(h_cmd, 1, 1, 1, subj, sess, "tarEx")
 
+    # make scans found in scan_dict
     scan_list = os.listdir(os.path.join(dcm_dir, tar_out, "scans"))
     for i in scan_dict:
 
+        # exclude certain dirs
         h_list = [
             x for x in scan_list if i in x and "setter" not in x and "dMRI" not in x
         ]
+
+        # make output dir
         h_out_dir = os.path.join(subj_dir, scan_dict[i])
         if not os.path.exists(h_out_dir):
             os.makedirs(h_out_dir)
 
         for j in h_list:
 
+            # path to dcms
             h_input_dir = os.path.join(
                 dcm_dir, tar_out, "scans", j, "resources/DICOM/files"
             )
 
-            # This might be cleaner in a class
+            # Determine BIDS out string
+            h_str = j.split("_")[-1]
             if scan_dict[i] == "func":
-                h_out_str = (
-                    subj
-                    + "_"
-                    + sess
-                    + "_"
-                    + "task-vCAT"
-                    + "_run-"
-                    + j.split("_")[-1]
-                    + "_bold"
-                )
+                h_out_str = f"{subj}_{sess}_task-vCAT_run-{h_str}_bold"
             elif scan_dict[i] == "fmap":
-                h_out_str = (
-                    subj + "_" + sess + "_acq-func_dir-" + j.split("_")[-1] + "_epi"
-                )
+                h_out_str = f"{subj}_{sess}_acq-func_dir-{h_str}_epi"
             elif scan_dict[i] == "anat":
-                h_out_str = subj + "_" + sess + "_T1w"
+                h_out_str = f"{subj}_{sess}_T1w"
 
+            # write, submit job
             if not os.path.exists(os.path.join(h_out_dir, h_out_str)):
                 h_cmd = f"""
-                module load dcm2niix
-                dcm2niix -b y -ba y -z y -o {h_out_dir} -f {h_out_str} {h_input_dir}
+                    module load dcm2niix
+                    dcm2niix -b y -ba y -z y -o {h_out_dir} -f {h_out_str} {h_input_dir}
                 """
                 func_sbatch(h_cmd, 1, 1, 1, subj, sess, "dcm2nii")
 
