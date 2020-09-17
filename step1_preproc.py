@@ -408,7 +408,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dNwarpApply -master struct_ns+tlrc \
                 -dxyz {grid_size} \
                 -source {i}_blip+orig \
-                -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+                -nwarp 'anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D' \
                 -prefix {i}_warp
 
             3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
@@ -416,7 +416,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dNwarpApply -master struct_ns+tlrc \
                 -dxyz {grid_size} \
                 -source tmp_{i}_mask+orig \
-                -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
+                -nwarp 'anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D' \
                 -interp cubic \
                 -ainterp NN -quiet \
                 -prefix {i}_mask_warped
