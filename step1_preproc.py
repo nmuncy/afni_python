@@ -1,15 +1,26 @@
 # %%
-# --- Notes
-#
-# 1) only written to accept one experiment phase (e.g. Study, Test) per session, assumes
-#       all epi scans in session pertain to phase
-#
-# TODO:
-#   1) Update template? Referencing special template/priors
-#   2) Change func_sbatch stdout/err capture
-#   3) Due to double quotes in sbatch command, verify that "$" is being
-#       interpreted
+"""
+Notes
 
+1) Only written to accept one experiment phase (e.g. Study, Test) per session, assumes
+    all epi scans in session pertain to phase
+
+2) Script will generate named sbatch subprocesses named for each sub-step.
+    Output for each sbatch step is written to work_dir and prepeneded
+    with "sbatch_writeOut"
+
+3) Pre-processing steps include copying data to derivatives, distortion correcting
+    volume registration, normalization, generating intersection masks, and
+    scaling the data.
+
+4) Written in Python 3.8, has afni and c3d dependencies.
+
+
+TODO:
+  1) Update template? Referencing special template/priors
+  2) Update for multiple phases per experiment
+  3) Receive work_dir from wrapper script
+"""
 
 import json
 import os
@@ -20,7 +31,7 @@ import math
 import time
 
 
-# Submit jobs to slurm
+# Submit jobs to slurm, check & wait for job to finish
 #   Note: len(h_str) < 8
 def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
 
@@ -56,6 +67,7 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
 
 
 # %%
+# Do general pre-processing steps
 def func_preproc(data_dir, work_dir, subj, sess, phase):
 
     """
@@ -230,7 +242,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
             h_cmd = f"""
                 cd {work_dir}
-                
+
                 3dQwarp -plusminus -pmNAMES Rev For \
                     -pblur 0.05 0.05 -blur -1 -1 \
                     -noweight -minpatch 9 \
@@ -394,7 +406,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 mat.{i}.vr.aff12.1D > mat.{i}.warp.aff12.1D
 
             3dNwarpApply -master struct_ns+tlrc \
-                -dxyz {gridSize} \
+                -dxyz {grid_size} \
                 -source {i}_blip+orig \
                 -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
                 -prefix {i}_warp
@@ -402,7 +414,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
 
             3dNwarpApply -master struct_ns+tlrc \
-                -dxyz {gridSize} \
+                -dxyz {grid_size} \
                 -source tmp_{i}_mask+orig \
                 -nwarp "anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D" \
                 -interp cubic \
