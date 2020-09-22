@@ -106,7 +106,7 @@ def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
                 h_out_str = f"{subj}_{sess}_T1w"
 
             # write, submit job
-            if not os.path.exists(os.path.join(h_out_dir, h_out_str)):
+            if not os.path.exists(os.path.join(h_out_dir, f"{h_out_str}.nii.gz")):
                 h_cmd = f"""
                     module load dcm2niix
                     dcm2niix -b y -ba y -z y -o {h_out_dir} -f {h_out_str} {h_input_dir}
