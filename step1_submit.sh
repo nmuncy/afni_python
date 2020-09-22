@@ -16,7 +16,8 @@ sessList=(ses-S1)
 phaseList=(vCAT)
 
 cd $dsetDir
-for i in s*; do
+# for i in s*; do
+for i in sub-006; do
     for j in ${sessList[@]}; do
         for k in ${phaseList[@]}; do
             if [ ! -f ${workDir}/${i}/${j}/run-1_${k}_scale+tlrc.HEAD ]; then
