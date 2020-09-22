@@ -23,6 +23,8 @@ TODO:
   4) Use something besides epi_dict?
         Originally I was going to pull info from the json sidecars, but they
         just don't contain the info I want.
+  5) Could make faster by having the sbatch wait in the subprocess script?
+        Would have to still wait for the parallel jobs to finish ...
 """
 
 import json
@@ -390,6 +392,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         h_gs = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
         h_gs_out = h_gs.communicate()[0]
         grid_size = h_gs_out.decode("utf-8").strip()
+        blip_mat = f"blip_{i.split('_')[0]}_For_WARP+orig"
 
         h_cmd = f"""
             cd {work_dir}
@@ -402,7 +405,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dNwarpApply -master struct_ns+tlrc \
                 -dxyz {grid_size} \
                 -source {i}+orig \
-                -nwarp 'anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D blip_{i}_For_WARP+orig' \
+                -nwarp 'anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D {blip_mat}' \
                 -prefix {i}_warp
 
             3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
