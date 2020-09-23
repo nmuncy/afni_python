@@ -25,6 +25,7 @@ TODO:
         just don't contain the info I want.
   5) Could make faster by having the sbatch wait in the subprocess script?
         Would have to still wait for the parallel jobs to finish ...
+  6) Update censor limit to 0.05 rather than 0.1?
 """
 
 import json
