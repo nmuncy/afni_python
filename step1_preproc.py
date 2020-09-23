@@ -276,6 +276,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         for x in os.listdir(work_dir)
         if fnmatch.fnmatch(x, "outcount.*.1D")
     ]
+    out_list.sort()
     out_all = os.path.join(work_dir, "outcount_all.1D")
     with open(out_all, "w") as outfile:
         for i in out_list:
@@ -546,7 +547,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
     """
     Step 6: Scale data
 
-    Data is scaled by mean signal
+    Data is scaled by mean, median signal
     """
 
     for i in epi_dict.keys():
@@ -559,6 +560,13 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                     -c {epi_mask} \
                     -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
                     -prefix {i}_scale
+
+                3dTstat -median -prefix tmp_median_{i} {i}_blur+tlrc
+                3dcalc -a {i}_blur+tlrc \
+                    -b tmp_median_{i}+tlrc \
+                    -c {epi_mask} \
+                    -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
+                    -prefix {i}_scale_med
             """
             func_sbatch(h_cmd, 1, 1, 1, "scale", work_dir)
 
