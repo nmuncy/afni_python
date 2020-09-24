@@ -6,10 +6,50 @@ Still only accepts one phase per session. Update this in the future.
 
 # %%
 import os
+import re
 import sys
 import subprocess
 import fnmatch
 from step1_preproc import func_sbatch
+
+
+def func_pmBlock(tf_dict):
+    h_reg_beh = ""
+    for c_beh, beh in enumerate(tf_dict):
+        h_reg_beh += f'-stim_times_AM2 {c_beh + 1} {tf_dict[beh]} "dmBLOCK(1)" -stim_label {c_beh + 1} {beh} '
+    return h_reg_beh
+
+
+def func_decon(run_files, mot_files, tf_dict, cen_file, h_out, h_type):
+
+    in_files = ""
+    for fil in run_files:
+        in_files += f"{fil.split('.')[0]} "
+
+    reg_base = ""
+    for c, mot in enumerate(mot_files):
+        reg_base += f"-ortvec {mot} mot_demean_run{c+1} "
+
+    if h_type == "pmBLOCK":
+        reg_beh = func_pmBlock(tf_dict)
+
+    cmd_decon = f""" 3dDeconvolve \\
+        -x1D_stop \\
+        -input {in_files} \\
+        -censor {cen_file} \\
+        {reg_base} \\
+        -polort A \\
+        -float \\
+        -local_times \\
+        -num_stimts {len(tf_dict.keys())} \\
+        {reg_beh} \\
+        -jobs 1 \\
+        -x1D X.{h_out}.xmat.1D \\
+        -xjpeg X.{h_out}.jpg \\
+        -x1D_uncensored X.{h_out}.nocensor.xmat.1D \\
+        -bucket {h_out}_stats -errts {h_out}_errts
+    """
+    return cmd_decon
 
 
 # For testing
@@ -73,48 +113,6 @@ if not os.path.exists(os.path.join(work_dir, f"censor_{phase}_combined.1D")):
 Step 2: Deconvolve
 """
 
-
-def func_pmBlock(tf_dict):
-    reg_beh = ""
-    for c_beh, beh in enumerate(tf_dict):
-        reg_beh += f"""
-            -stim_times_AM2 {c_beh + 1} {tf_dict[beh]} \"dmBLOCK(1)\" \
-            -stim_label {c_beh + 1} {beh}
-        """
-    return reg_beh
-
-
-# tf_dict = {"BehA": "Timing_fileA.txt"}
-def func_decon(run_files, mot_files, tf_dict, cen_file, h_out, h_type):
-
-    # make reg_base
-    reg_base = ""
-    for c, mot in enumerate(mot_files):
-        reg_base += f"-ortvec {mot} mot_demean_run{c+1} "
-
-    # make reg_beh
-    if h_type == "pmBlock":
-        reg_beh = func_pmBlock(tf_dict)
-
-    cmd_decon = f"""
-        3dDeconvolve \
-        -x1D_stop \
-        -input {run_files} \
-        -censor {cen_file} \
-        {reg_base} \
-        -polort A \
-        -float \
-        -num_stimts {len(tf_dict.keys())} \
-        {reg_beh} \
-        -jobs 1 \
-        -x1D X.{h_out}.xmat.1D \
-        -xjpeg X.{h_out}.jpg \
-        -x1D_uncensored X.{h_out}.nocensor.xmat.1D \
-        -bucket {h_out}_stats -errts {h_out}_errts
-    """
-    return cmd_decon
-
-
 # Get motion files
 mot_list = [
     x for x in os.listdir(work_dir) if fnmatch.fnmatch(x, f"mot_demean_{phase}.*.1D")
@@ -122,18 +120,18 @@ mot_list = [
 mot_list.sort()
 
 
-# # Get timing files
-# tf_list = [
-#     x
-#     for x in os.listdir(os.path.join(work_dir, "timing_files"))
-#     if fnmatch.fnmatch(x, f"*{phase}*.txt")
-# ]
+# Get timing files - all are named *_phase_beh.txt
+#   e.g. tf_vCAT_hit.txt
+tf_list = [x for x in os.listdir(work_dir) if fnmatch.fnmatch(x, f"*{phase}*.txt")]
 
 # make timing file dictionary
 tf_dict = {}
+for i in tf_list:
+    tmp = i.split("_")[-1]
+    beh = tmp.split(".")[0]
+    tf_dict[beh] = i
 
-
-# write decon script
+# write decon script, generate matrices and REML_cmd
 decon_script = os.path.join(work_dir, f"decon_{phase}.sh")
 with open(decon_script, "w") as script:
     script.write(
@@ -142,5 +140,24 @@ with open(decon_script, "w") as script:
         )
     )
 
-h_cmd = f"cd {work_dir} \n source decon_{phase}.sh"
-func_sbatch(h_cmd, 1, 1, 1, "decon", work_dir)
+if not os.path.exists(os.path.join(work_dir, f"X.{phase}.xmat.1D")):
+    h_cmd = f"cd {work_dir} \n source {decon_script}"
+    func_sbatch(h_cmd, 1, 1, 1, "decon", work_dir)
+
+# generate WM timeseries
+if not os.path.exists(os.path.join(work_dir, f"{phase}_WMe_rall+tlrc.HEAD")):
+    h_cmd = f"""
+        cd {work_dir}
+        3dTcat -prefix tmp_allRuns_{phase} run-*{phase}_scale+tlrc.HEAD
+        3dcalc -a tmp_allRuns_{phase}+tlrc -b final_mask_WM_eroded+tlrc \
+            -expr 'a*bool(b)' -datum float -prefix tmp_allRuns_{phase}_WMe
+        3dmerge -1blur_fwhm 20 -doall -prefix {phase}_WMe_rall tmp_allRuns_{phase}_WMe+tlrc
+    """
+    func_sbatch(h_cmd, 1, 1, 4, "wmts", work_dir)
+
+# run REML
+if not os.path.exists(os.path.join(work_dir, f"{phase}_stats_REML+tlrc.HEAD")):
+    h_cmd = (
+        f"cd {work_dir} \n tcsh -x {phase}_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
+    )
+    func_sbatch(h_cmd, 10, 6, 4, "reml", work_dir)
