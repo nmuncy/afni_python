@@ -561,13 +561,6 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                     -c {epi_mask} \
                     -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
                     -prefix {i}_scale
-
-                3dTstat -median -prefix tmp_median_{i} {i}_blur+tlrc
-                3dcalc -a {i}_blur+tlrc \
-                    -b tmp_median_{i}+tlrc \
-                    -c {epi_mask} \
-                    -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
-                    -prefix {i}_scale_med
             """
             func_sbatch(h_cmd, 1, 1, 1, "scale", work_dir)
 
