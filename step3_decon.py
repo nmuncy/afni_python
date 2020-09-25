@@ -16,7 +16,21 @@ from step1_preproc import func_sbatch
 def func_pmBlock(tf_dict):
     h_reg_beh = ""
     for c_beh, beh in enumerate(tf_dict):
-        h_reg_beh += f'-stim_times_AM2 {c_beh + 1} {tf_dict[beh]} "dmBLOCK(1)" -stim_label {c_beh + 1} {beh} '
+        h_reg_beh += f'-stim_times_AM1 {c_beh + 1} {tf_dict[beh]} "dmBLOCK(1)" -stim_label {c_beh + 1} {beh} '
+    return h_reg_beh
+
+
+def func_gam(tf_dict):
+    h_reg_beh = ""
+    for c_beh, beh in enumerate(tf_dict):
+        h_reg_beh += f'-stim_times {c_beh + 1} {tf_dict[beh]} "GAM" -stim_label {c_beh + 1} {beh} '
+    return h_reg_beh
+
+
+def func_twoGam(df_dict):
+    h_reg_beh = ""
+    for c_beh, beh in enumerate(tf_dict):
+        h_reg_beh += f'-stim_times {c_beh + 1} {tf_dict[beh]} "TWOGAMpw(4,5,0.2,12,7)" -stim_label {c_beh + 1} {beh} '
     return h_reg_beh
 
 
@@ -32,6 +46,10 @@ def func_decon(run_files, mot_files, tf_dict, cen_file, h_out, h_type):
 
     if h_type == "pmBLOCK":
         reg_beh = func_pmBlock(tf_dict)
+    elif h_type == "GAM":
+        reg_beh = func_gam(tf_dict)
+    elif h_type == "2GAM":
+        reg_beh = func_twoGam(tf_dict)
 
     cmd_decon = f""" 3dDeconvolve \\
         -x1D_stop \\
