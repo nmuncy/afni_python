@@ -128,6 +128,11 @@ def func_job(phase, decon_type, work_dir):
     if not os.path.exists(os.path.join(work_dir, f"censor_{phase}_combined.1D")):
         func_sbatch(h_cmd, 1, 1, 1, "motion", work_dir)
 
+    # step check
+    if not os.path.exists(os.path.join(work_dir, f"motion_{phase}_censor.1D")):
+        print(f"Step 1 failed to produce motion_{phase}_censor.1D. Exiting.")
+        exit
+
     # %%
     """
     Step 2: Deconvolve
@@ -182,6 +187,11 @@ def func_job(phase, decon_type, work_dir):
         h_cmd = f"cd {work_dir} \n source {decon_script}"
         func_sbatch(h_cmd, 1, 1, 1, "decon", work_dir)
 
+    # check
+    if not os.path.exists(os.path.join(work_dir, f"X.{phase}_{decon_type}.xmat.1D")):
+        print(f"Step 2 failed to produce X.{phase}_{decon_type}.xmat.1D. Exiting.")
+        exit
+
     # generate WM timeseries
     if not os.path.exists(os.path.join(work_dir, f"{phase}_WMe_rall+tlrc.HEAD")):
         h_cmd = f"""
@@ -192,6 +202,11 @@ def func_job(phase, decon_type, work_dir):
             3dmerge -1blur_fwhm 20 -doall -prefix {phase}_WMe_rall tmp_allRuns_{phase}_WMe+tlrc
         """
         func_sbatch(h_cmd, 1, 1, 4, "wmts", work_dir)
+
+    # check
+    if not os.path.exists(os.path.join(work_dir, f"{phase}_WMe_rall+tlrc.HEAD")):
+        print(f"Step 2 failed to produce {phase}_WMe_rall+tlrc. Exiting.")
+        exit
 
     # run REML
     if not os.path.exists(
