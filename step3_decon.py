@@ -42,6 +42,8 @@ def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):
             reg_beh += f'-stim_times {c_beh + 1} {tf_dict[beh]} "GAM" -stim_label {c_beh + 1} {beh} '
         elif h_type == "2GAM":
             reg_beh += f'-stim_times {c_beh + 1} {tf_dict[beh]} "TWOGAMpw(4,5,0.2,12,7)" -stim_label {c_beh + 1} {beh} '
+        elif h_type == "TENT":
+            reg_beh += f'-stim_times {c_beh + 1} {tf_dict[beh]} "TENT(0,12,7)" -stim_label {c_beh + 1} {beh} '
 
     h_out = f"{h_str}_{h_type}"
 

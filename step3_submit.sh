@@ -10,7 +10,7 @@ mkdir -p $outDir
 
 sessList=(ses-S1)
 phaseList=(vCAT)
-deconType=2GAM
+deconType=2GAM          # Can use dmBLOCK, GAM, 2GAM, or TENT
 
 cd $workDir
 for i in s*; do
