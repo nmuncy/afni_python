@@ -8,11 +8,12 @@
 #SBATCH --partition centos7_IB_44C_512G
 #SBATCH --account iacc_madlab
 
-h_subj=$1
-h_sess=$2
-h_phase=$3
-# h_dir=$4
-h_dir=~/compute/afni_python
+subj=$1
+sess=$2
+phase=$3
+decon=$4
+deriv_dir=$5
+code_dir=$6
 
 module load python-3.7.0-gcc-8.2.0-joh2xyk
-python ${h_dir}/step3_decon.py
+python ${code_dir}/step3_decon.py $subj $sess $phase $decon $deriv_dir
