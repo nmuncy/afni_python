@@ -19,13 +19,12 @@ Notes
 TODO:
   1) Update template? Referencing special template/priors
   2) Update for multiple phases per experiment
-  3) Receive work_dir from wrapper script
-  4) Use something besides epi_dict?
+  3) Use something besides epi_dict?
         Originally I was going to pull info from the json sidecars, but they
         just don't contain the info I want.
-  5) Could make faster by having the sbatch wait in the subprocess script?
+  4) Could make faster by having the sbatch wait in the subprocess script?
         Would have to still wait for the parallel jobs to finish ...
-  6) Update censor limit to 0.05 rather than 0.1?
+  5) Update censor limit to 0.05 rather than 0.1?
 """
 
 import json
@@ -577,8 +576,9 @@ def main():
     subj = str(sys.argv[1])
     sess = str(sys.argv[2])
     phase = str(sys.argv[3])
+    par_dir = str(sys.argv[4])
 
-    par_dir = "/scratch/madlab/nate_vCAT"
+    # par_dir = "/scratch/madlab/nate_vCAT"
     data_dir = os.path.join(par_dir, "dset", subj, sess)
     work_dir = os.path.join(par_dir, "derivatives", subj, sess)
 
