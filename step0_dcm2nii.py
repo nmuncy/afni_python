@@ -11,8 +11,6 @@ Notes:
 
 TODO:
   1) resolve the multiple T1w issue
-  2) update h_scan_dict[func] to hold task name, reflect in code
-  3) update sbatch stdout/err write location
 """
 
 import os
@@ -25,15 +23,17 @@ import sys
 
 
 # Submit jobs to slurm, wait for job to finish
-def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
+def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, slurm_dir, subj, sess):
 
-    full_name = h_sub + "_" + h_ses + "_" + h_str
-    sbatch_job = f"sbatch \
+    full_name = f"{slurm_dir}/sbatch_writeOut_{subj}_{sess}_{h_str}"
+    sbatch_job = f"""
+        sbatch \
         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
         -p centos7_IB_44C_512G  -o {full_name}.out -e {full_name}.err \
         --account iacc_madlab --qos pq_madlab \
-        --wrap='{command}'"
-
+        --wrap="module load afni-20.2.06 \n {command}"
+    """
+    print(h_str, sbatch_job)
     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_response.communicate()
 
@@ -56,7 +56,7 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_sub, h_ses, h_str):
     print(f'Sbatch job "{h_str}" finished')
 
 
-def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
+def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict, slurm_dir):
 
     # get paths, make output dirs
     sess = "ses-" + dcm_tar.split("-")[4].split(".")[0]
@@ -73,7 +73,7 @@ def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
     tar_out = dcm_tar.split(".")[0]
     if not os.path.exists(os.path.join(dcm_dir, tar_out)):
         h_cmd = f"tar -C {dcm_dir} -xzf {tar_ball}"
-        func_sbatch(h_cmd, 1, 1, 1, subj, sess, "tarEx")
+        func_sbatch(h_cmd, 1, 1, 1, "tarEx", slurm_dir, subj, sess)
 
     # make scans found in scan_dict
     scan_list = os.listdir(os.path.join(dcm_dir, tar_out, "scans"))
@@ -111,18 +111,26 @@ def func_job(dcm_tar, data_dir, work_dir, source_dir, scan_dict):
                     module load dcm2niix
                     dcm2niix -b y -ba y -z y -o {h_out_dir} -f {h_out_str} {h_input_dir}
                 """
-                func_sbatch(h_cmd, 1, 1, 1, subj, sess, "dcm2nii")
+                func_sbatch(h_cmd, 1, 1, 1, "dcm2nii", slurm_dir, subj, sess)
 
 
 def main():
+    # # for testing
     # h_dcm_tar = "Mattfeld_REVL-000-vCAT-005-S1.tar.gz"
+    # h_data_dir = "/home/data/madlab/Mattfeld_vCAT/sourcedata"
+    # h_work_dir = "/scratch/madlab/nate_vCAT/dset"
+    # h_source_dir = "/scratch/madlab/nate_vCAT/sourcedata"
+
     h_dcm_tar = str(sys.argv[1])
-    h_data_dir = "/home/data/madlab/Mattfeld_vCAT/sourcedata"
-    h_work_dir = "/scratch/madlab/nate_vCAT/dset"
-    h_source_dir = "/scratch/madlab/nate_vCAT/sourcedata"
+    h_data_dir = str(sys.argv[2])
+    h_par_dir = str(sys.argv[3])
+    h_slurm = str(sys.argv[4])
+
+    h_work_dir = os.path.join(h_par_dir, "dset")
+    h_source_dir = os.path.join(h_par_dir, "sourcedata")
     h_scan_dict = {"Study": "func", "T1w": "anat", "Dist": "fmap"}
 
-    func_job(h_dcm_tar, h_data_dir, h_work_dir, h_source_dir, h_scan_dict)
+    func_job(h_dcm_tar, h_data_dir, h_work_dir, h_source_dir, h_scan_dict, h_slurm)
 
 
 if __name__ == "__main__":
