@@ -19,7 +19,7 @@ code_dir = "/home/nmuncy/compute/afni_python"
 work_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
 phase_list = ["vCAT"]
-decon_type = "TENT"
+decon_type = "2GAM"
 
 # set up stdout/err capture
 deriv_dir = os.path.join(work_dir, "derivatives")

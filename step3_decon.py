@@ -17,9 +17,11 @@ TODO:
 
 # %%
 import os
-import re
+
+# import re
 import sys
-import subprocess
+
+# import subprocess
 import fnmatch
 from step1_preproc import func_sbatch
 
@@ -61,7 +63,9 @@ def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):
         -x1D X.{h_out}.xmat.1D \\
         -xjpeg X.{h_out}.jpg \\
         -x1D_uncensored X.{h_out}.nocensor.xmat.1D \\
-        -bucket {h_out}_stats -errts {h_out}_errts
+        -bucket {h_out}_stats \\
+        -cbucket {h_out}_cbucket \\
+        -errts {h_out}_errts
     """
     return cmd_decon
 
