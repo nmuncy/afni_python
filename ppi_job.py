@@ -76,16 +76,16 @@ if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
     func_sbatch(h_cmd, 1, 4, 1, "clean", subj_dir)
 
 # %%
-# make upsampled ideal 2GAM function
-# h_mult = 2
-# status = False
-# while status:
-#     if (float(len_tr) * h_mult) % 2 == 0:
-#         status = True
-#     else:
-#         h_mult += 1
-res_multiplier = 25
+# find smallest multiplier that returns int for resampling
+res_multiplier = 2
+status = False
+while not status:
+    if ((float(len_tr) * res_multiplier) % 2) == 0:
+        status = True
+    else:
+        res_multiplier += 1
 
+# make upsampled ideal 2GAM function
 h_cmd = f"""
     3dDeconvolve -polort -1 \
         -nodata {int(float(len_tr) * res_multiplier)} 0.4 \
@@ -123,3 +123,5 @@ for key in seed_dict:
             1dtranspose tmp.1D > Seed_{key}_ts_neural.1D
         """
         func_sbatch(h_cmd, 2, 4, 1, "faltung", subj_dir)
+
+# %%
