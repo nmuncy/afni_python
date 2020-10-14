@@ -33,7 +33,7 @@ len_tr = h_tr.communicate()[0].decode("utf-8").strip()
 
 # get proper brick length
 #   REML appends an extra brick because
-#   for reasons. Account for AFNIs random
+#   "reasons". Account for AFNIs random
 #   0-1 indexing
 h_cmd = f"module load afni-20.2.06 \n 3dinfo -nv {subj_dir}/{phase}_{decon_type}_cbucket_REML+tlrc"
 h_len = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
@@ -76,38 +76,50 @@ if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
     func_sbatch(h_cmd, 1, 4, 1, "clean", subj_dir)
 
 # %%
-# make ideal bold with Cox formula
+# make upsampled ideal 2GAM function
+# h_mult = 2
+# status = False
+# while status:
+#     if (float(len_tr) * h_mult) % 2 == 0:
+#         status = True
+#     else:
+#         h_mult += 1
+res_multiplier = 25
+
 h_cmd = f"""
     3dDeconvolve -polort -1 \
-        -nodata {float(len_tr) * 100} 0.1 \
+        -nodata {int(float(len_tr) * res_multiplier)} 0.4 \
         -num_stimts 1 \
         -stim_times 1 1D:0 'TWOGAMpw(4,5,0.2,12,7)' \
-        -x1D {subj_dir}/ClassicBold.1D -x1D_stop
+        -x1D {subj_dir}/HRF_model.1D -x1D_stop
 """
-func_sbatch(h_cmd, 1, 1, 1, "classic", subj_dir)
+func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
 
 
 # %%
 # get seed TS, solve RHS
 for key in seed_dict:
-    h_cmd = f"""
-        cd {subj_dir}
-        3dUndump -prefix Seed_{key} -master CleanData_{phase}+tlrc -srad 3 -xyz {seed_dict[key]}
-    """
 
+    # make seed, get TS and upsample
+    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}+tlrc.HEAD")):
+        h_cmd = f"""
+            cd {subj_dir}
+            echo {seed_dict[key]} | 3dUndump -xyz \
+                -srad 3 -master CleanData_{phase}+tlrc \
+                -prefix Seed_{key} -
+            3dmaskave -quiet -mask Seed_{key}+tlrc \
+                CleanData_{phase}+tlrc > Seed_{key}_ts_orig.1D
+            1dUpsample {res_multiplier} Seed_{key}_ts_orig.1D > Seed_{key}_ts_us.1D
+        """
+        func_sbatch(h_cmd, 1, 1, 1, "mkseed", subj_dir)
 
-# # Make seeds
-# seed=Seed_${seedName[$c]}
-
-# if [ ! -f ${seed}+tlrc.HEAD ]; then
-# 	echo ${seedCoord[$c]} > tmp_${seed}.txt
-# 	3dUndump -prefix $seed -master $ref -srad 3 -xyz tmp_${seed}.txt
-# fi
-
-# for j in ${deconList[@]}; do
-# 	if [ ! -f tmp_HRes_${seed}_${j}_neural.1D ] && [ ! -f ${seed}_${j}_TS_CA.1D ]; then
-
-
-# 		# Get seed TS from each CleanData, solve RHS for neural
-# 		3dmaskave -quiet -mask ${seed}+tlrc tmp_CleanData_${j}+tlrc > ${seed}_${j}_timeSeries.1D
-# 		3dTfitter -RHS ${seed}_${j}_timeSeries.1D -FALTUNG ClassicBold.1D tmp_${seed}_${j}_neural 012 0
+    # solve RHS
+    #   I want to use -l2lasso, but I'm scared
+    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_ts_neural.1D")):
+        h_cmd = f"""
+            cd {subj_dir}
+            3dTfitter -RHS Seed_{key}_ts_us.1D \
+                -FALTUNG HRF_model.1D tmp.1D 012 0
+            1dtranspose tmp.1D > Seed_{key}_ts_neural.1D
+        """
+        func_sbatch(h_cmd, 2, 4, 1, "faltung", subj_dir)
