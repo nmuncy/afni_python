@@ -85,6 +85,17 @@ while not status:
     else:
         res_multiplier += 1
 
+# check for 1dUpsample
+if res_multiplier > 32:
+    print(
+        """
+        Resample multiplier too high for use with 1dUpsample.
+        Adjust code to continue.
+        Exiting ...
+    """
+    )
+    exit
+
 # make upsampled ideal 2GAM function
 h_cmd = f"""
     3dDeconvolve -polort -1 \
