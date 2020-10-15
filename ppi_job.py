@@ -16,10 +16,11 @@ ses = "ses-S1"
 phase = "vCAT"
 decon_type = "2GAM"
 seed_dict = {"LHC": "-24 -12 -22"}
+stim_dur = 2
 
 # %%
 """
-Step 1: clean data
+Step 1: Clean Data
 
 Create "clean data" by removing effects of no interest
 (baseline regressors) from scaled data.
@@ -29,7 +30,7 @@ subj_dir = os.path.join(work_dir, subj, ses)
 # get TR
 h_cmd = f"module load afni-20.2.06 \n 3dinfo -tr {subj_dir}/run-1_{phase}_scale+tlrc"
 h_tr = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
-len_tr = h_tr.communicate()[0].decode("utf-8").strip()
+len_tr = float(h_tr.communicate()[0].decode("utf-8").strip())
 
 # get proper brick length
 #   REML appends an extra brick because
@@ -40,15 +41,16 @@ h_len = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
 len_wrong = h_len.communicate()[0].decode("utf-8").strip()
 len_right = int(len_wrong) - 2
 
-if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
+# list all scale files
+scale_list = [
+    x.split(".")[0]
+    for x in os.listdir(subj_dir)
+    if fnmatch.fnmatch(x, f"*{phase}*scale+tlrc.HEAD")
+]
+scale_list.sort()
 
-    # list all scale files
-    list_scale = [
-        x.split(".")[0]
-        for x in os.listdir(subj_dir)
-        if fnmatch.fnmatch(x, f"*{phase}*scale+tlrc.HEAD")
-    ]
-    list_scale.sort()
+# make clean data
+if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
 
     # list undesirable sub-bricks (those starting with Run or mot)
     no_int = []
@@ -70,17 +72,24 @@ if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
         3dTcat -prefix tmp_{phase}_cbucket -tr {len_tr} "{phase}_{decon_type}_cbucket_REML+tlrc[0..{len_right}]"
         3dSynthesize -prefix tmp_effNoInt_{phase} -matrix X.{phase}_{decon_type}.xmat.1D \
             -cbucket tmp_{phase}_cbucket+tlrc -select {" ".join(no_int)} -cenfill nbhr
-        3dTcat -prefix tmp_all_runs_{phase} -tr {len_tr} {" ".join(list_scale)}
+        3dTcat -prefix tmp_all_runs_{phase} -tr {len_tr} {" ".join(scale_list)}
         3dcalc -a tmp_all_runs_{phase}+tlrc -b tmp_effNoInt_{phase}+tlrc -expr 'a-b' -prefix CleanData_{phase}
     """
     func_sbatch(h_cmd, 1, 4, 1, "clean", subj_dir)
 
 # %%
+"""
+Step 2: Seed Time Series
+
+Make HRF model, and seed from coordinates.
+Extract timeseries from ROI and upsample.
+Deconvolve HRF from timeseries (solve RHS).
+"""
 # find smallest multiplier that returns int for resampling
 res_multiplier = 2
 status = False
 while not status:
-    if ((float(len_tr) * res_multiplier) % 2) == 0:
+    if ((len_tr * res_multiplier) % 2) == 0:
         status = True
     else:
         res_multiplier += 1
@@ -97,14 +106,15 @@ if res_multiplier > 32:
     exit
 
 # make upsampled ideal 2GAM function
-h_cmd = f"""
-    3dDeconvolve -polort -1 \
-        -nodata {int(float(len_tr) * res_multiplier)} 0.4 \
-        -num_stimts 1 \
-        -stim_times 1 1D:0 'TWOGAMpw(4,5,0.2,12,7)' \
-        -x1D {subj_dir}/HRF_model.1D -x1D_stop
-"""
-func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
+if not os.path.exists(os.path.join(subj_dir, "HRF_model.1D")):
+    h_cmd = f"""
+        3dDeconvolve -polort -1 \
+            -nodata {int(16 * res_multiplier)} 0.05 \
+            -num_stimts 1 \
+            -stim_times 1 1D:0 'TWOGAMpw(4,5,0.2,12,7)' \
+            -x1D {subj_dir}/HRF_model.1D -x1D_stop
+    """
+    func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
 
 
 # %%
@@ -119,8 +129,8 @@ for key in seed_dict:
                 -srad 3 -master CleanData_{phase}+tlrc \
                 -prefix Seed_{key} -
             3dmaskave -quiet -mask Seed_{key}+tlrc \
-                CleanData_{phase}+tlrc > Seed_{key}_ts_orig.1D
-            1dUpsample {res_multiplier} Seed_{key}_ts_orig.1D > Seed_{key}_ts_us.1D
+                CleanData_{phase}+tlrc > Seed_{key}_orig.1D
+            1dUpsample {res_multiplier} Seed_{key}_orig.1D > Seed_{key}_us.1D
         """
         func_sbatch(h_cmd, 1, 1, 1, "mkseed", subj_dir)
 
@@ -129,10 +139,40 @@ for key in seed_dict:
     if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_ts_neural.1D")):
         h_cmd = f"""
             cd {subj_dir}
-            3dTfitter -RHS Seed_{key}_ts_us.1D \
+            3dTfitter -RHS Seed_{key}_us.1D \
                 -FALTUNG HRF_model.1D tmp.1D 012 0
             1dtranspose tmp.1D > Seed_{key}_ts_neural.1D
         """
-        func_sbatch(h_cmd, 2, 4, 1, "faltung", subj_dir)
+        func_sbatch(h_cmd, 8, 4, 1, "faltung", subj_dir)
+
+# %%
+"""
+Step 3: Make Behavior Time Series
+
+Make behavior vectors, extract behavior portions
+of seed neural timeseries.
+Convolve with HRF.
+"""
+# list of timing files
+tf_list = [x for x in os.listdir(subj_dir) if fnmatch.fnmatch(x, f"tf_{phase}*.txt")]
+
+# list of run length in seconds
+run_len = []
+for i in scale_list:
+    h_cmd = f"module load afni-20.2.06 \n 3dinfo -ntimes {subj_dir}/{i}"
+    h_vol = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+    num_vol = int(h_vol.communicate()[0].decode("utf-8").strip())
+    run_len.append(str(num_vol * len_tr))
+
+# get upsampled behavior binary file
+for i in tf_list:
+    h_beh = i.split(".")[0].split("_")[-1]
+    h_cmd = f"""
+        cd {subj_dir}
+        timing_tool.py -timing {i} -tr {1 / res_multiplier} \
+            -stim_dur {stim_dur} -run_len {" ".join(run_len)} \
+            -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
+    """
+    func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
 
 # %%
