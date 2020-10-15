@@ -8,6 +8,58 @@ import subprocess
 import fnmatch
 from step1_preproc import func_sbatch
 
+
+# PPI decon function
+def func_decon_ppi(run_files, mot_files, tf_dict, cen_file, h_str, h_type, ppi_dict):
+
+    in_files = ""
+    for fil in run_files:
+        in_files += f"{fil} "
+
+    reg_base = ""
+    for c, mot in enumerate(mot_files):
+        reg_base += f"-ortvec {mot} mot_demean_run{c+1} "
+
+    c_beh = 0
+
+    reg_beh = ""
+    for beh in tf_dict:
+        c_beh += 1
+        if h_type == "dmBLOCK":
+            reg_beh += f'-stim_times_AM1 {c_beh} {tf_dict[beh]} "dmBLOCK(1)" -stim_label {c_beh} {beh} '
+        elif h_type == "GAM":
+            reg_beh += (
+                f'-stim_times {c_beh} {tf_dict[beh]} "GAM" -stim_label {c_beh} {beh} '
+            )
+        elif h_type == "2GAM":
+            reg_beh += f'-stim_times {c_beh} {tf_dict[beh]} "TWOGAMpw(4,5,0.2,12,7)" -stim_label {c_beh} {beh} '
+
+    for ts in ppi_dict:
+        c_beh += 1
+        reg_beh += f"-stim_file {c_beh} {ppi_dict[ts]} -stim_label {c_beh} {ts}"
+
+    h_out = f"{h_str}_{h_type}_ppi"
+
+    cmd_decon = f""" 3dDeconvolve \\
+        -x1D_stop \\
+        -input {in_files} \\
+        -censor {cen_file} \\
+        {reg_base} \\
+        -polort A \\
+        -float \\
+        -local_times \\
+        -num_stimts {len(tf_dict.keys())} \\
+        {reg_beh} \\
+        -jobs 1 \\
+        -x1D X.{h_out}.xmat.1D \\
+        -xjpeg X.{h_out}.jpg \\
+        -x1D_uncensored X.{h_out}.nocensor.xmat.1D \\
+        -bucket {h_out}_stats \\
+        -errts {h_out}_errts
+    """
+    return cmd_decon
+
+
 # %%
 # for testing
 work_dir = "/scratch/madlab/nate_vCAT/derivatives"
@@ -17,6 +69,7 @@ phase = "vCAT"
 decon_type = "2GAM"
 seed_dict = {"LHC": "-24 -12 -22"}
 stim_dur = 2
+
 
 # %%
 """
@@ -77,6 +130,7 @@ if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
     """
     func_sbatch(h_cmd, 1, 4, 1, "clean", subj_dir)
 
+
 # %%
 """
 Step 2: Seed Time Series
@@ -128,51 +182,127 @@ for key in seed_dict:
             echo {seed_dict[key]} | 3dUndump -xyz \
                 -srad 3 -master CleanData_{phase}+tlrc \
                 -prefix Seed_{key} -
-            3dmaskave -quiet -mask Seed_{key}+tlrc \
-                CleanData_{phase}+tlrc > Seed_{key}_orig.1D
+            3dmaskave -quiet -mask Seed_{key}+tlrc CleanData_{phase}+tlrc > Seed_{key}_orig.1D
             1dUpsample {res_multiplier} Seed_{key}_orig.1D > Seed_{key}_us.1D
         """
         func_sbatch(h_cmd, 1, 1, 1, "mkseed", subj_dir)
 
     # solve RHS
     #   I want to use -l2lasso, but I'm scared
-    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_ts_neural.1D")):
+    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_neural.1D")):
         h_cmd = f"""
             cd {subj_dir}
-            3dTfitter -RHS Seed_{key}_us.1D \
-                -FALTUNG HRF_model.1D tmp.1D 012 0
-            1dtranspose tmp.1D > Seed_{key}_ts_neural.1D
+            3dTfitter -RHS Seed_{key}_us.1D -FALTUNG HRF_model.1D tmp.1D 012 0
+            1dtranspose tmp.1D > Seed_{key}_neural.1D
         """
-        func_sbatch(h_cmd, 8, 4, 1, "faltung", subj_dir)
+        func_sbatch(h_cmd, 8, 1, 4, "faltung", subj_dir)
+
 
 # %%
 """
 Step 3: Make Behavior Time Series
 
 Make behavior vectors, extract behavior portions
-of seed neural timeseries.
+    of seed neural timeseries.
 Convolve with HRF.
 """
 # list of timing files
 tf_list = [x for x in os.listdir(subj_dir) if fnmatch.fnmatch(x, f"tf_{phase}*.txt")]
 
 # list of run length in seconds
+#   I should clean up run_len/int
 run_len = []
+run_int = []
 for i in scale_list:
     h_cmd = f"module load afni-20.2.06 \n 3dinfo -ntimes {subj_dir}/{i}"
     h_vol = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
     num_vol = int(h_vol.communicate()[0].decode("utf-8").strip())
     run_len.append(str(num_vol * len_tr))
+    run_int.append(num_vol * len_tr)
 
-# get upsampled behavior binary file
 for i in tf_list:
     h_beh = i.split(".")[0].split("_")[-1]
-    h_cmd = f"""
-        cd {subj_dir}
-        timing_tool.py -timing {i} -tr {1 / res_multiplier} \
-            -stim_dur {stim_dur} -run_len {" ".join(run_len)} \
-            -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
-    """
-    func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
+
+    # get upsampled behavior binary file
+    if not os.path.exists(os.path.join(subj_dir, f"Beh_{h_beh}_bin.1D")):
+        h_cmd = f"""
+            cd {subj_dir}
+            timing_tool.py -timing {i} -tr {1 / res_multiplier} \
+                -stim_dur {stim_dur} -run_len {" ".join(run_len)} \
+                -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
+        """
+        func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
+
+    # multiply beh bin file by clean neuro, convolve with HRF
+    #   and downsample
+    for key in seed_dict:
+        if not os.path.exists(os.path.join(subj_dir, f"Beh_{h_beh}_{key}_bold.1D")):
+            h_cmd = f"""
+                cd {subj_dir}
+                1deval -a Seed_{key}_neural.1D -b Beh_{h_beh}_bin.1D \
+                    -expr 'a*b' > Seed_{key}_{h_beh}_neural.1D
+                waver -FILE {1 / res_multiplier} HRF_model.1D -input Seed_{key}_{h_beh}_neural.1D \
+                    -numout {round(sum(run_int) * res_multiplier)} > Seed_{key}_{h_beh}_bold.1D
+            """
+            func_sbatch(h_cmd, 2, 1, 1, "behTS", subj_dir)
+
+        # Downsample
+        if not os.path.exists(
+            os.path.join(subj_dir, f"Final_{key}_{h_beh}_timeSeries.1D")
+        ):
+            final_list = []
+            with open(f"Seed_{key}_{h_beh}_bold.1D") as f:
+                for h_int, h_val in enumerate(f):
+                    if h_int % res_multiplier == 0:
+                        final_list.append(h_val)
+
 
 # %%
+"""
+Step 4: Rerun Deconvolution
+
+Same decon as before, add Seed and Behavior timeseries.
+"""
+mot_list = [
+    x for x in os.listdir(subj_dir) if fnmatch.fnmatch(x, f"mot_demean_{phase}.*.1D")
+]
+mot_list.sort()
+
+tf_dict = {}
+for i in tf_list:
+    tmp = i.split("_")[-1]
+    beh = tmp.split(".")[0]
+    tf_dict[beh] = i
+
+ppi_dict = {}
+for key in seed_dict:
+    ppi_dict[key] = f"Seed_{key}_orig.1D"
+    for beh in tf_dict:
+        ppi_dict[f"{key}_{beh}"] = f"Final_{key}_{beh}_timeSeries.1D"
+
+# write decon script, generate matrices and REML_cmd
+decon_script = os.path.join(subj_dir, f"ppi_decon_{phase}_{decon_type}.sh")
+with open(decon_script, "w") as script:
+    script.write(
+        func_decon_ppi(
+            scale_list,
+            mot_list,
+            tf_dict,
+            f"censor_{phase}_combined.1D",
+            phase,
+            decon_type,
+            ppi_dict,
+        )
+    )
+
+# run decon script to generate matrices
+if not os.path.exists(os.path.join(subj_dir, f"X.{phase}_{decon_type}_ppi.xmat.1D")):
+    h_cmd = f"cd {subj_dir} \n source {decon_script}"
+    func_sbatch(h_cmd, 1, 1, 1, "decon", subj_dir)
+
+# run REML
+if not os.path.exists(
+    os.path.join(subj_dir, f"{phase}_{decon_type}_ppi_stats_REML+tlrc.HEAD")
+):
+    h_cmd = f"cd {subj_dir} \n tcsh -x {phase}_{decon_type}_ppi_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
+    func_sbatch(h_cmd, 10, 4, 6, "reml", subj_dir)
