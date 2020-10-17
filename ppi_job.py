@@ -174,11 +174,13 @@ if not os.path.exists(os.path.join(subj_dir, "HRF_model.1D")):
         hrf_model = "TWOGAMpw(4,5,0.2,12,7)"
 
     h_cmd = f"""
+        cd {subj_dir}
         3dDeconvolve -polort -1 \
             -nodata {no_data} \
             -num_stimts 1 \
             -stim_times 1 1D:0 '{hrf_model}' \
-            -x1D {subj_dir}/HRF_model.1D -x1D_stop
+            -x1D HRF_model.1D -x1D_stop
+        1dUpsample {res_multiplier} HRF_model.1D > HRF_model_us.1D
     """
     func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
 
@@ -215,7 +217,7 @@ Step 3: Make Behavior Time Series
 
 Make behavior vectors, extract behavior portions
     of seed neural timeseries.
-Convolve with HRF.
+Convolve with HRF, then down sample
 """
 # list of timing files
 tf_list = [x for x in os.listdir(subj_dir) if fnmatch.fnmatch(x, f"tf_{phase}*.txt")]
@@ -244,28 +246,27 @@ for i in tf_list:
         func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
 
     # multiply beh bin file by clean neuro, convolve with HRF
-    #   and downsample
     for key in seed_dict:
-        if not os.path.exists(os.path.join(subj_dir, f"Beh_{h_beh}_{key}_bold.1D")):
+        if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_{h_beh}_bold_us.1D")):
             h_cmd = f"""
                 cd {subj_dir}
                 1deval -a Seed_{key}_neural_us.1D -b Beh_{h_beh}_us.1D \
-                    -expr 'a*b' > Seed_{key}_{h_beh}_neural.1D
-                waver -FILE {1 / res_multiplier} HRF_model.1D -input Seed_{key}_{h_beh}_neural.1D \
-                    -numout {round(sum(run_len) * res_multiplier)} > Seed_{key}_{h_beh}_bold.1D
+                    -expr 'a*b' > Seed_{key}_{h_beh}_neural_us.1D
+                waver -FILE {1 / res_multiplier} HRF_model_us.1D -input Seed_{key}_{h_beh}_neural_us.1D \
+                    -numout {round((sum(run_len) / len_tr) * res_multiplier)} > Seed_{key}_{h_beh}_bold_us.1D
             """
             func_sbatch(h_cmd, 2, 1, 1, "behTS", subj_dir)
 
-        # %%
-        # Downsample
+        # Downsample, bash > python
         if not os.path.exists(
             os.path.join(subj_dir, f"Final_{key}_{h_beh}_timeSeries.1D")
         ):
-            final_list = []
-            with open(f"Seed_{key}_{h_beh}_bold.1D") as f:
-                for h_int, h_val in enumerate(f):
-                    if h_int % res_multiplier == 0:
-                        final_list.append(h_val)
+            h_cmd = f"""
+                cd {subj_dir}
+                cat Seed_{key}_{h_beh}_bold_us.1D | \
+                    awk -v n={res_multiplier} 'NR%n==0' > Final_{key}_{h_beh}_timeSeries.1D
+            """
+            func_sbatch(h_cmd, 1, 1, 1, "dsts", subj_dir)
 
 
 # %%
