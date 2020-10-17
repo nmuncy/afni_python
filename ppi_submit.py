@@ -13,6 +13,7 @@ import os
 from datetime import datetime
 import fnmatch
 import subprocess
+import json
 
 # set up
 code_dir = "/home/nmuncy/compute/afni_python"
@@ -36,26 +37,31 @@ subj_list = [x for x in os.listdir(deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
 
 for i in subj_list:
     for j in sess_list:
+        subj_dir = os.path.join(deriv_dir, i, j)
         for k in phase_list:
             if not os.path.exists(
                 os.path.join(
-                    deriv_dir,
-                    i,
-                    j,
-                    f"{k}_{decon_type}_ppi_stats_REML+tlrc.HEAD",
+                    subj_dir,
+                    f"{k}_{decon_type}_ppi1_stats_REML+tlrc.HEAD",
                 )
             ):
 
+                # write json to avoid quotation issue
+                with open(os.path.join(subj_dir, "seed_dict.json"), "w") as outfile:
+                    json.dump(seed_dict, outfile)
+
+                # Set stdout/err file
                 h_out = os.path.join(out_dir, f"out_{i}_{j}_{k}.txt")
                 h_err = os.path.join(out_dir, f"err_{i}_{j}_{k}.txt")
 
+                # submit command
                 sbatch_job = f"""
                     sbatch \
-                    -J "PPI1" -t 00:01:00 --mem=1000 --ntasks-per-node=1 \
+                    -J "PPI1" -t 15:00:00 --mem=4000 --ntasks-per-node=1 \
                     -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                     --account iacc_madlab --qos pq_madlab \
                     --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-                    python {code_dir}/ppi_job.py {i} {j} {k} {decon_type} {deriv_dir} {seed_dict} {stim_dur}"
+                    python {code_dir}/ppi_job.py {i} {j} {k} {decon_type} {deriv_dir} {stim_dur}"
                 """
 
                 sbatch_submit = subprocess.Popen(
