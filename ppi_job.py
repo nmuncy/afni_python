@@ -36,7 +36,7 @@ def func_decon_ppi(run_files, mot_files, tf_dict, cen_file, h_str, h_type, ppi_d
 
     for ts in ppi_dict:
         c_beh += 1
-        reg_beh += f"-stim_file {c_beh} {ppi_dict[ts]} -stim_label {c_beh} {ts}"
+        reg_beh += f"-stim_file {c_beh} {ppi_dict[ts]} -stim_label {c_beh} {ts} "
 
     h_out = f"{h_str}_{h_type}_ppi"
 
@@ -159,23 +159,34 @@ if res_multiplier > 32:
     )
     exit
 
-# make upsampled ideal 2GAM function
+# make ideal HRF, use same model as deconvolution
+#   TENT not supported.
 if not os.path.exists(os.path.join(subj_dir, "HRF_model.1D")):
+
+    if decon_type == "dmBLOCK":
+        no_data = f"{14 + stim_dur} 1"
+        hrf_model = "BLOCK(1,1)"
+    elif decon_type == "GAM":
+        no_data = "13 1"
+        hrf_model = "GAM"
+    elif decon_type == "2GAM":
+        no_data = "19 1"
+        hrf_model = "TWOGAMpw(4,5,0.2,12,7)"
+
     h_cmd = f"""
         3dDeconvolve -polort -1 \
-            -nodata {int(16 * res_multiplier)} 0.05 \
+            -nodata {no_data} \
             -num_stimts 1 \
-            -stim_times 1 1D:0 'TWOGAMpw(4,5,0.2,12,7)' \
+            -stim_times 1 1D:0 '{hrf_model}' \
             -x1D {subj_dir}/HRF_model.1D -x1D_stop
     """
     func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
-
 
 # %%
 # get seed TS, solve RHS
 for key in seed_dict:
 
-    # make seed, get TS and upsample
+    # make seed, get TS
     if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}+tlrc.HEAD")):
         h_cmd = f"""
             cd {subj_dir}
@@ -183,17 +194,17 @@ for key in seed_dict:
                 -srad 3 -master CleanData_{phase}+tlrc \
                 -prefix Seed_{key} -
             3dmaskave -quiet -mask Seed_{key}+tlrc CleanData_{phase}+tlrc > Seed_{key}_orig.1D
-            1dUpsample {res_multiplier} Seed_{key}_orig.1D > Seed_{key}_us.1D
         """
         func_sbatch(h_cmd, 1, 1, 1, "mkseed", subj_dir)
 
-    # solve RHS
+    # solve RHS, then upsample
     #   I want to use -l2lasso, but I'm scared
-    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_neural.1D")):
+    if not os.path.exists(os.path.join(subj_dir, f"Seed_{key}_neural_us.1D")):
         h_cmd = f"""
             cd {subj_dir}
-            3dTfitter -RHS Seed_{key}_us.1D -FALTUNG HRF_model.1D tmp.1D 012 0
+            3dTfitter -RHS Seed_{key}_orig.1D -FALTUNG HRF_model.1D tmp.1D 012 0
             1dtranspose tmp.1D > Seed_{key}_neural.1D
+            1dUpsample {res_multiplier} Seed_{key}_neural.1D > Seed_{key}_neural_us.1D
         """
         func_sbatch(h_cmd, 8, 1, 4, "faltung", subj_dir)
 
@@ -210,16 +221,14 @@ Convolve with HRF.
 tf_list = [x for x in os.listdir(subj_dir) if fnmatch.fnmatch(x, f"tf_{phase}*.txt")]
 
 # list of run length in seconds
-#   I should clean up run_len/int
 run_len = []
-run_int = []
 for i in scale_list:
     h_cmd = f"module load afni-20.2.06 \n 3dinfo -ntimes {subj_dir}/{i}"
     h_vol = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
     num_vol = int(h_vol.communicate()[0].decode("utf-8").strip())
-    run_len.append(str(num_vol * len_tr))
-    run_int.append(num_vol * len_tr)
+    run_len.append(num_vol * len_tr)
 
+# %%
 for i in tf_list:
     h_beh = i.split(".")[0].split("_")[-1]
 
@@ -227,9 +236,10 @@ for i in tf_list:
     if not os.path.exists(os.path.join(subj_dir, f"Beh_{h_beh}_bin.1D")):
         h_cmd = f"""
             cd {subj_dir}
-            timing_tool.py -timing {i} -tr {1 / res_multiplier} \
-                -stim_dur {stim_dur} -run_len {" ".join(run_len)} \
+            timing_tool.py -timing {i} -tr {len_tr} \
+                -stim_dur {stim_dur} -run_len {" ".join(map(str, run_len))} \
                 -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
+            1dUpsample -1 {res_multiplier} Beh_{h_beh}_bin.1D > Beh_{h_beh}_us.1D
         """
         func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
 
@@ -239,13 +249,14 @@ for i in tf_list:
         if not os.path.exists(os.path.join(subj_dir, f"Beh_{h_beh}_{key}_bold.1D")):
             h_cmd = f"""
                 cd {subj_dir}
-                1deval -a Seed_{key}_neural.1D -b Beh_{h_beh}_bin.1D \
+                1deval -a Seed_{key}_neural_us.1D -b Beh_{h_beh}_us.1D \
                     -expr 'a*b' > Seed_{key}_{h_beh}_neural.1D
                 waver -FILE {1 / res_multiplier} HRF_model.1D -input Seed_{key}_{h_beh}_neural.1D \
-                    -numout {round(sum(run_int) * res_multiplier)} > Seed_{key}_{h_beh}_bold.1D
+                    -numout {round(sum(run_len) * res_multiplier)} > Seed_{key}_{h_beh}_bold.1D
             """
             func_sbatch(h_cmd, 2, 1, 1, "behTS", subj_dir)
 
+        # %%
         # Downsample
         if not os.path.exists(
             os.path.join(subj_dir, f"Final_{key}_{h_beh}_timeSeries.1D")
