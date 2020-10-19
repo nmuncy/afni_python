@@ -64,6 +64,7 @@ def func_decon_ppi(run_files, mot_files, tf_dict, cen_file, h_str, h_type, ppi_d
 
 # %%
 def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
+
     # # for testing
     # work_dir = "/scratch/madlab/nate_vCAT/derivatives"
     # subj = "sub-006"
@@ -73,7 +74,6 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
     # seed_dict = {"LHC": "-24 -12 -22"}
     # stim_dur = 2
 
-    # %%
     """
     Step 1: Clean Data
 
@@ -243,7 +243,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                 timing_tool.py -timing {i} -tr {len_tr} \
                     -stim_dur {stim_dur} -run_len {" ".join(map(str, run_len))} \
                     -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
-                1dUpsample -1 {res_multiplier} Beh_{h_beh}_bin.1D > Beh_{h_beh}_us.1D
+                awk '{{for(i=0;i<{res_multiplier};i++)print}}' Beh_{h_beh}_bin.1D > Beh_{h_beh}_us.1D
             """
             func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
 
