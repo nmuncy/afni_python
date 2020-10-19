@@ -24,9 +24,9 @@ import time
 
 # set up
 code_dir = "/home/nmuncy/compute/afni_python"
-work_dir = "/scratch/madlab/nate_ppi"
-sess_list = ["ses-S2"]
-phase_list = ["rest"]
+work_dir = "/scratch/madlab/nate_vCAT"
+sess_list = ["ses-S1"]
+phase_list = ["vCAT"]
 blip_toggle = 0  # 1 = on, 0 = off
 
 # set up stdout/err capture
