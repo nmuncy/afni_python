@@ -73,7 +73,7 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
 
 # %%
 # Do general pre-processing steps
-def func_preproc(data_dir, work_dir, subj, sess, phase):
+def func_preproc(data_dir, work_dir, subj, sess, phase, blip_tog):
 
     """
     Step 1: Copy data into work_dir
@@ -106,7 +106,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         h_cmd = "3dcopy {} {}".format(struct_nii, struct_raw)
         func_sbatch(h_cmd, 1, 1, 1, "struct", work_dir)
 
-    # epi - only task, not rsFMRI
+    # epi
     epi_list = [
         epi
         for epi in os.listdir(os.path.join(data_dir, "func"))
@@ -129,55 +129,59 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             h_cmd = "3dcopy {} {}".format(epi_nii, epi_raw)
             func_sbatch(h_cmd, 1, 1, 1, "epi", work_dir)
 
-    # %%
+    # # %%
     # fmap
     #   In EMU, account for potential multiple fmaps, use IntendedFor
-    json_list = [
-        x
-        for x in os.listdir(os.path.join(data_dir, "fmap"))
-        if fnmatch.fnmatch(x, "*.json")
-    ]
+    if blip_tog == 1:
 
-    fmap_list = []
-    for i in json_list:
-        with open(os.path.join(data_dir, "fmap", i)) as j:
-            h_json = json.load(j)
-            if "IntendedFor" not in h_json:
-                fmap_list.append(i.split(".")[0] + ".nii.gz")
-            else:
-                for k in epi_list:
-                    h_epi = os.path.join(sess, "func", k)
-                    if h_epi in h_json["IntendedFor"]:
-                        fmap_list.append(i.split(".")[0] + ".nii.gz")
+        json_list = [
+            x
+            for x in os.listdir(os.path.join(data_dir, "fmap"))
+            if fnmatch.fnmatch(x, "*.json")
+        ]
 
-    # copy fmap function
-    def func_fmap(h_file, h_run):
+        fmap_list = []
+        for i in json_list:
+            with open(os.path.join(data_dir, "fmap", i)) as j:
+                h_json = json.load(j)
+                if "IntendedFor" not in h_json:
+                    fmap_list.append(i.split(".")[0] + ".nii.gz")
+                else:
+                    for k in epi_list:
+                        h_epi = os.path.join(sess, "func", k)
+                        if h_epi in h_json["IntendedFor"]:
+                            fmap_list.append(i.split(".")[0] + ".nii.gz")
 
-        fmap_nii = os.path.join(data_dir, "fmap", h_file)
-        h_dir = h_file.split("-")[4].lstrip().split("_")[0]
-        enc_dir = "Forward" if h_dir == "AP" else "Reverse"
-        fmap_raw = os.path.join(work_dir, "blip_run-{}_{}+orig".format(h_run, enc_dir))
+        # copy fmap function
+        def func_fmap(h_file, h_run):
 
-        if not os.path.exists(fmap_raw + ".HEAD"):
-            h_cmd = "3dcopy {} {}".format(fmap_nii, fmap_raw)
-            func_sbatch(h_cmd, 1, 1, 1, "fmap", work_dir)
+            fmap_nii = os.path.join(data_dir, "fmap", h_file)
+            h_dir = h_file.split("-")[4].lstrip().split("_")[0]
+            enc_dir = "Forward" if h_dir == "AP" else "Reverse"
+            fmap_raw = os.path.join(
+                work_dir, "blip_run-{}_{}+orig".format(h_run, enc_dir)
+            )
 
-    # Make fmap for each epi run
-    epi_len = len(epi_list) + 1
-    if len(fmap_list) == 2:
-        for i in range(1, epi_len):
-            for j in fmap_list:
-                func_fmap(j, i)
-    else:
-        h_half = len(fmap_list) // 2
-        fmap_list_A = sorted(fmap_list[:h_half])
-        fmap_list_B = sorted(fmap_list[h_half:])
+            if not os.path.exists(fmap_raw + ".HEAD"):
+                h_cmd = "3dcopy {} {}".format(fmap_nii, fmap_raw)
+                func_sbatch(h_cmd, 1, 1, 1, "fmap", work_dir)
 
-        count = 1
-        for i, j in zip(fmap_list_A, fmap_list_B):
-            func_fmap(i, count)
-            func_fmap(j, count)
-            count += 1
+        # Make fmap for each epi run
+        epi_len = len(epi_list) + 1
+        if len(fmap_list) == 2:
+            for i in range(1, epi_len):
+                for j in fmap_list:
+                    func_fmap(j, i)
+        else:
+            h_half = len(fmap_list) // 2
+            fmap_list_A = sorted(fmap_list[:h_half])
+            fmap_list_B = sorted(fmap_list[h_half:])
+
+            count = 1
+            for i, j in zip(fmap_list_A, fmap_list_B):
+                func_fmap(i, count)
+                func_fmap(j, count)
+                count += 1
 
     # step check
     if not os.path.exists(os.path.join(work_dir, f"run-1_{phase}+orig.HEAD")):
@@ -219,45 +223,46 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             """
             func_sbatch(h_cmd, 1, 1, 1, "outlier", work_dir)
 
-        h_run = i.split("_")[0]
-        for j in ["Forward", "Reverse"]:
+        if blip_tog == 1:
+            h_run = i.split("_")[0]
+            for j in ["Forward", "Reverse"]:
 
-            # create median datasets and masks
-            if not os.path.exists(
-                os.path.join(work_dir, f"tmp_blip_med_masked_{h_run}_{j}+orig.HEAD")
-            ):
+                # create median datasets and masks
+                if not os.path.exists(
+                    os.path.join(work_dir, f"tmp_blip_med_masked_{h_run}_{j}+orig.HEAD")
+                ):
+                    h_cmd = f"""
+                        cd {work_dir}
+                        3dTstat -median -prefix tmp_blip_med_{h_run}_{j} blip_{h_run}_{j}+orig
+                        3dAutomask -apply_prefix tmp_blip_med_masked_{h_run}_{j} \
+                            tmp_blip_med_{h_run}_{j}+orig
+                    """
+                    func_sbatch(h_cmd, 1, 1, 1, "fmap_med", work_dir)
+
+            # comput midpoint warp, unwarp run data (solve for fall out), apply header
+            if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
                 h_cmd = f"""
                     cd {work_dir}
-                    3dTstat -median -prefix tmp_blip_med_{h_run}_{j} blip_{h_run}_{j}+orig
-                    3dAutomask -apply_prefix tmp_blip_med_masked_{h_run}_{j} \
-                        tmp_blip_med_{h_run}_{j}+orig
+
+                    3dQwarp -plusminus -pmNAMES Rev For \
+                        -pblur 0.05 0.05 -blur -1 -1 \
+                        -noweight -minpatch 9 \
+                        -source tmp_blip_med_masked_{h_run}_Reverse+orig \
+                        -base tmp_blip_med_masked_{h_run}_Forward+orig \
+                        -prefix blip_{h_run}
+
+                    3dNwarpApply -quintic -nwarp blip_{h_run}_For_WARP+orig \
+                        -source {i}+orig -prefix {i}_blip
+
+                    3drefit -atrcopy blip_{h_run}_Forward+orig IJK_TO_DICOM_REAL {i}_blip+orig
                 """
-                func_sbatch(h_cmd, 1, 1, 1, "fmap_med", work_dir)
+                func_sbatch(h_cmd, 1, 4, 2, "qwarp", work_dir)
 
-        # comput midpoint warp, unwarp run data (solve for fall out), apply header
-        if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
-            h_cmd = f"""
-                cd {work_dir}
-
-                3dQwarp -plusminus -pmNAMES Rev For \
-                    -pblur 0.05 0.05 -blur -1 -1 \
-                    -noweight -minpatch 9 \
-                    -source tmp_blip_med_masked_{h_run}_Reverse+orig \
-                    -base tmp_blip_med_masked_{h_run}_Forward+orig \
-                    -prefix blip_{h_run}
-
-                3dNwarpApply -quintic -nwarp blip_{h_run}_For_WARP+orig \
-                    -source {i}+orig -prefix {i}_blip
-
-                3drefit -atrcopy blip_{h_run}_Forward+orig IJK_TO_DICOM_REAL {i}_blip+orig
-            """
-            func_sbatch(h_cmd, 1, 4, 2, "qwarp", work_dir)
-
-    # step check
-    for i in epi_dict.keys():
-        if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
-            print(f"File {i} missing. Exiting.")
-            exit
+        # step check
+        for i in epi_dict.keys():
+            if not os.path.exists(os.path.join(work_dir, f"{i}_blip+orig.HEAD")):
+                print(f"File {i} missing. Exiting.")
+                exit
 
     # %%
     """
@@ -292,7 +297,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 cd {}
 
                 unset tr_counts block
-                numRuns=0; for i in run*_vCAT+orig.HEAD; do
+                numRuns=0; for i in run*_{}+orig.HEAD; do
                     hold=`3dinfo -ntimes ${{i%.*}}`
                     tr_counts+="$hold "
                     block[$numRuns]=${{i%+*}}
@@ -313,7 +318,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
 
                 3dbucket -prefix epi_vr_base ${{baseRun}}_blip+orig"[${{minouttr}}]"
                 """.format(
-                    work_dir
+                    work_dir, phase
                 )
             )
 
@@ -370,6 +375,12 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
 
     # Calculate volreg for e/run
     for i in epi_dict.keys():
+
+        if blip_tog == 1:
+            h_in = f"{i}_blip+orig"
+        else:
+            h_in = f"{i}+orig"
+
         h_cmd = f"""
             cd {work_dir}
 
@@ -380,7 +391,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
                 -prefix {i}_volreg \
                 -cubic \
                 -1Dmatrix_save mat.{i}.vr.aff12.1D \
-                {i}_blip+orig
+                {h_in}
         """
         if not os.path.exists(os.path.join(work_dir, f"mat.{i}.vr.aff12.1D")):
             func_sbatch(h_cmd, 1, 1, 1, "volreg", work_dir)
@@ -393,7 +404,12 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
         h_gs = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
         h_gs_out = h_gs.communicate()[0]
         grid_size = h_gs_out.decode("utf-8").strip()
-        blip_mat = f"blip_{i.split('_')[0]}_For_WARP+orig"
+
+        if blip_tog == 1:
+            blip_mat = f"blip_{i.split('_')[0]}_For_WARP+orig"
+            h_nwarp = f"anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D {blip_mat}"
+        else:
+            h_nwarp = f"anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D"
 
         h_cmd = f"""
             cd {work_dir}
@@ -406,7 +422,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase):
             3dNwarpApply -master struct_ns+tlrc \
                 -dxyz {grid_size} \
                 -source {i}+orig \
-                -nwarp 'anat.un.aff.qw_WARP.nii mat.{i}.warp.aff12.1D {blip_mat}' \
+                -nwarp '{h_nwarp}' \
                 -prefix {i}_warp
 
             3dcalc -overwrite -a {i}_blip+orig -expr 1 -prefix tmp_{i}_mask
@@ -577,6 +593,7 @@ def main():
     sess = str(sys.argv[2])
     phase = str(sys.argv[3])
     par_dir = str(sys.argv[4])
+    blip_tog = str(sys.argv[5])
 
     # par_dir = "/scratch/madlab/nate_vCAT"
     data_dir = os.path.join(par_dir, "dset", subj, sess)
@@ -585,7 +602,7 @@ def main():
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
 
-    func_preproc(data_dir, work_dir, subj, sess, phase)
+    func_preproc(data_dir, work_dir, subj, sess, phase, blip_tog)
 
 
 if __name__ == "__main__":
