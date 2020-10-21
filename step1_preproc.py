@@ -2,29 +2,20 @@
 """
 Notes
 
-1) Only written to accept one experiment phase (e.g. Study, Test) per session, assumes
-    all epi scans in session pertain to phase
-
-2) Script will generate named sbatch subprocesses named for each sub-step.
+1) Script will generate named sbatch subprocesses named for each sub-step.
     Output for each sbatch step is written to work_dir and prepeneded
     with "sbatch_writeOut"
 
-3) Pre-processing steps include copying data to derivatives, distortion correcting
-    volume registration, normalization, generating intersection masks, and
+2) Pre-processing steps include copying data to derivatives, distortion correcting,
+    volume registration, normalization, generating intersection masks, blurring, and
     scaling the data.
 
-4) Written in Python 3.8, has afni and c3d dependencies.
+3) Written in Python 3.8, has afni and c3d dependencies.
 
 
 TODO:
   1) Update template? Referencing special template/priors
-  2) Update for multiple phases per experiment
-  3) Use something besides epi_dict?
-        Originally I was going to pull info from the json sidecars, but they
-        just don't contain the info I want.
-  4) Could make faster by having the sbatch wait in the subprocess script?
-        Would have to still wait for the parallel jobs to finish ...
-  5) Update censor limit to 0.05 rather than 0.1?
+  2) Update censor limit to 0.05 rather than 0.1?
 """
 
 import json
@@ -71,6 +62,7 @@ def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
     print(f'Sbatch job "{h_str}" finished')
 
 
+# make a list of all EPI scans of phase X
 def func_epi_list(phase, h_dir):
     h_list = [
         x.split("+")[0]
@@ -81,19 +73,15 @@ def func_epi_list(phase, h_dir):
 
 
 # %%
-# Do general pre-processing steps
 # def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
 
 """
 Step 1: Copy data into work_dir
 
-Get func, anat, fmap data. Rename appropriately.
+1) Get func, anat, fmap data. Rename appropriately.
 
-To account for different num of fmaps, will
-produce AP, PA fmap per run.
-
-Make epi_dict for later use, like pulling header info
-or looping through runs.
+2) To account for different num of fmaps, will
+    produce AP, PA fmap per run.
 """
 
 # For testing
@@ -106,7 +94,7 @@ par_dir = "/scratch/madlab/nate_vCAT"
 data_dir = os.path.join(par_dir, "dset", subj, sess)
 work_dir = os.path.join(par_dir, "derivatives", subj, sess)
 
-# start
+# Start
 if not os.path.exists(work_dir):
     os.makedirs(work_dir)
 
@@ -135,7 +123,7 @@ for phase in phase_list:
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}epi", work_dir)
 
 # %%
-# fmap -- need to test
+# fmap
 if blip_tog == 1:
 
     json_list = [
@@ -220,7 +208,7 @@ for phase in phase_list:
         h_len_tr = h_tr.communicate()[0]
         len_tr = h_len_tr.decode("utf-8").strip()
 
-        # calc number of tr
+        # calc number of volumes
         h_cmd = (
             f"module load afni-20.2.06 \n cd {work_dir} \n 3dinfo -ntimes {run}+orig"
         )
@@ -231,7 +219,7 @@ for phase in phase_list:
         # determine polort argument
         pol = 1 + math.ceil((float(len_tr) * float(num_tr)) / 150)
 
-        # determine percentage outliers
+        # determine percentage outliers for e/volume
         if not os.path.exists(os.path.join(work_dir, f"out.cen.{run}.1D")):
             h_cmd = f"""
                 cd {work_dir}
@@ -281,7 +269,7 @@ for phase in phase_list:
 Step 3: Make volreg base
 
 1) The volreg base (epi_vrBase) is the single volume in entire experiment
-with the smallest number of outlier volumes.
+    with the smallest number of outlier volumes.
 
 Note: If data is not time shifted, do so before determining volreg_base.
     Also, it was easier to write a small bash script due to the multiple
@@ -341,14 +329,15 @@ if not os.path.exists(os.path.join(work_dir, "epi_vrBase+orig.HEAD")):
 """
 Step 4: Calc, Perfrom normalization
 
-This step will perform the rigid alignments of T1-EPI (A)
-EPI-EPI base volume (B), and non-linear diffeomorphic of T1-Template (C).
+1) This step will perform the rigid alignments of T1-EPI (A)
+    EPI-EPI base volume (B), and non-linear diffeomorphic of
+    T1-Template (C). Note blip distortion map (D).
 
-It will then concatenate these warp matrices, and warp EPI data from
-raw/native space to template space via W=A'+B+C. Thus, only one
-interpolation of the epi data occurs.
+2) It will then concatenate these warp matrices, and warp EPI data from
+    raw/native space to template space via W=A'+B+C+D. Thus, only one
+    interpolation of the epi data occurs.
 
-Will also censor volumes that have outlier, to not bias scaling
+3) Will also censor volumes that have outlier, to not bias scaling
 """
 
 # Calculate T1-EPI rigid, T1-Template diffeo
@@ -413,8 +402,7 @@ for phase in phase_list:
 
         # determine input
         if blip_tog == 1:
-            blip_mat = f"blip_{run.split('_')[0]}_For_WARP+orig"
-            h_nwarp = f"anat.un.aff.qw_WARP.nii mat.{run}.warp.aff12.1D {blip_mat}"
+            h_nwarp = f"anat.un.aff.qw_WARP.nii mat.{run}.warp.aff12.1D blip_{run.split('_')[0]}_For_WARP+orig"
         else:
             h_nwarp = f"anat.un.aff.qw_WARP.nii mat.{run}.warp.aff12.1D"
 
@@ -450,7 +438,7 @@ for phase in phase_list:
             func_sbatch(h_cmd, 1, 4, 4, f"{subj_num}war", work_dir)
 
 # Determine minimum value, make mask
-#   beware the expanding braces in 3dMean
+#   beware the (jabberwocky) expanding braces in 3dMean
 for phase in phase_list:
     epi_list = func_epi_list(phase, work_dir)
     h_cmd = f"""
@@ -568,7 +556,7 @@ for i in atropos_dict:
 """
 Step 6: Scale data
 
-Data is scaled by mean, median signal
+1) Data is scaled by mean signal
 """
 
 for phase in phase_list:
