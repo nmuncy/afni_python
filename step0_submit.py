@@ -11,18 +11,17 @@ import os
 from datetime import datetime
 import fnmatch
 import subprocess
+import time
 
 # set paths
 code_dir = "/home/nmuncy/compute/afni_python"
 tar_dir = "/home/data/madlab/Mattfeld_vCAT/sourcedata"
 work_dir = "/scratch/madlab/nate_vCAT"
-# work_dir = "/home/nmuncy/compute/afni_python/test"
 
 current_time = datetime.now()
 out_dir = f'derivatives/Slurm_out/TS0_{current_time.strftime("%H%M_%d-%m-%y")}'
 slurm_dir = os.path.join(work_dir, out_dir)
 
-# %%
 # set up work_dir
 dir_list = ["dset", "sourcedata", "derivatives", out_dir]
 for i in dir_list:
@@ -35,9 +34,8 @@ tar_list = [x for x in os.listdir(tar_dir) if fnmatch.fnmatch(x, "*.tar.gz")]
 
 # %%
 for i in tar_list:
-    # i = tar_list[0]
-    tar_file = i.split("/")[-1]
 
+    tar_file = i.split("/")[-1]
     tar_str = tar_file.split(".")[0]
     h_out = os.path.join(slurm_dir, f"out_{tar_str}.txt")
     h_err = os.path.join(slurm_dir, f"err_{tar_str}.txt")
@@ -54,4 +52,7 @@ for i in tar_list:
     sbatch_submit = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
     job_id, error = sbatch_submit.communicate()
     print(job_id)
+
+    # give jobs time to start so we don't hit the "pending lockout"
+    time.sleep(30)
 # %%
