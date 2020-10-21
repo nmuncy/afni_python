@@ -27,7 +27,7 @@ code_dir = "/home/nmuncy/compute/afni_python"
 work_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
 phase_list = ["vCAT"]
-blip_toggle = 0  # 1 = on, 0 = off
+blip_toggle = 1  # 1 = on, 0 = off
 
 # set up stdout/err capture
 current_time = datetime.now()
