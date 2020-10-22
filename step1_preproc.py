@@ -72,6 +72,7 @@ def func_epi_list(phase, h_dir):
         for x in os.listdir(h_dir)
         if fnmatch.fnmatch(x, f"run-*_{phase}+orig.HEAD")
     ]
+    h_list.sort()
     return h_list
 
 
@@ -373,7 +374,7 @@ h_cmd = f"""
     cp awpy/anat.un.aff.qw_WARP.nii .
 """
 if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
-    func_sbatch(h_cmd, 2, 4, 4, f"{subj_num}dif", work_dir)
+    func_sbatch(h_cmd, 1, 4, 4, f"{subj_num}dif", work_dir)
 
 for phase in phase_list:
     epi_list = func_epi_list(phase, work_dir)
@@ -441,7 +442,7 @@ for phase in phase_list:
             3dTstat -min -prefix tmp_{run}_min {run}_mask_warped+tlrc
         """
         if not os.path.exists(os.path.join(work_dir, f"{run}_warp+tlrc.HEAD")):
-            func_sbatch(h_cmd, 1, 4, 4, f"{subj_num}war", work_dir)
+            func_sbatch(h_cmd, 2, 4, 4, f"{subj_num}war", work_dir)
 
 # Determine minimum value, make mask
 #   beware the jabberwocky i.e. expanding braces in 3dMean
@@ -457,7 +458,6 @@ for phase in phase_list:
 
     # make clean data
     epi_mask = os.path.join(work_dir, f"{phase}_minVal_mask+tlrc")
-
     for run in epi_list:
         h_warp = os.path.join(work_dir, f"{run}_warp+tlrc")
         h_clean = os.path.join(work_dir, f"{run}_volreg_clean")
@@ -574,17 +574,12 @@ for phase in phase_list:
                 3dTstat -prefix tmp_tstat_{run} {run}_blur+tlrc
                 3dcalc -a {run}_blur+tlrc \
                     -b tmp_tstat_{run}+tlrc \
-                    -c {epi_mask} \
+                    -c {phase}_minVal_mask+tlrc \
                     -expr 'c * min(200, a/b*100)*step(a)*step(b)' \
                     -prefix {run}_scale
             """
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}scale", work_dir)
 
-# Clean up
-if os.path.exists(os.path.join(work_dir, f"run-1_{phase_list[0]}+tlrc.HEAD")):
-    os.remove(os.path.join(work_dir, "tmp_*"))
-    os.remove(os.path.join(work_dir, "sbatch*"))
-    os.remove(os.path.join(work_dir, "blip_*"))
 
 # %%
 # def main():
