@@ -97,10 +97,10 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
     # data_dir = os.path.join(par_dir, "dset", subj, sess)
     # work_dir = os.path.join(par_dir, "derivatives", subj, sess)
 
-    # Start
-    if not os.path.exists(work_dir):
-        os.makedirs(work_dir)
+    # if not os.path.exists(work_dir):
+    #     os.makedirs(work_dir)
 
+    # Start
     subj_num = subj.split("-")[1]
 
     # struct
@@ -586,19 +586,21 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
 # %%
 def main():
 
-    subj = str(sys.argv[1])
-    sess = str(sys.argv[2])
-    phase_list = str(sys.argv[3])
-    par_dir = str(sys.argv[4])
-    blip_tog = str(sys.argv[5])
+    h_subj = str(sys.argv[1])
+    h_sess = str(sys.argv[2])
 
-    data_dir = os.path.join(par_dir, "dset", subj, sess)
-    work_dir = os.path.join(par_dir, "derivatives", subj, sess)
+    from step1_submit import phase_list as h_pl
+    from step1_submit import blip_toggle as h_blip_tog
+    from step1_submit import parent_dir as h_par_dir
 
-    if not os.path.exists(work_dir):
-        os.makedirs(work_dir)
+    h_data_dir = os.path.join(h_par_dir, "dset", h_subj, h_sess)
+    h_work_dir = os.path.join(h_par_dir, "derivatives", h_subj, h_sess)
 
-    func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog)
+    if not os.path.exists(h_work_dir):
+        os.makedirs(h_work_dir)
+
+    # print(h_data_dir, h_work_dir, h_subj, h_sess, h_phase_list, h_blip_tog)
+    func_preproc(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
 
 
 if __name__ == "__main__":

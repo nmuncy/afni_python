@@ -8,12 +8,6 @@ Update paths in "set up" section.
 phase_list = list of phases gathered within a single session.
     For example, if a study and then a test phase were both scanned
     during the same session, then phase_list = ["study", "test"]
-
-    Note: step1_preproc.py currently only accepts one phase per
-        session, but this will be updated at some point.
-
-TODO:
-    1) combine sess/phase_list to dictionary?
 """
 
 # %%
@@ -24,7 +18,7 @@ import time
 
 # set up
 code_dir = "/home/nmuncy/compute/afni_python"
-work_dir = "/scratch/madlab/nate_vCAT"
+parent_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
 phase_list = ["vCAT"]
 blip_toggle = 1  # 1 = on, 0 = off
@@ -32,19 +26,24 @@ blip_toggle = 1  # 1 = on, 0 = off
 # set up stdout/err capture
 current_time = datetime.now()
 out_dir = os.path.join(
-    work_dir, f'derivatives/Slurm_out/TS1_{current_time.strftime("%H%M_%d-%m-%y")}'
+    parent_dir, f'derivatives/Slurm_out/TS1_{current_time.strftime("%H%M_%d-%m-%y")}'
 )
 os.makedirs(out_dir)
 
 # submit job for each subj/sess/phase
-subj_list = os.listdir(os.path.join(work_dir, "dset"))
+subj_list = os.listdir(os.path.join(parent_dir, "dset"))
 subj_list.sort()
 
 for i in subj_list:
+    # i = subj_list[1]
     for j in sess_list:
         if not os.path.exists(
             os.path.join(
-                work_dir, "derivatives", i, j, f"run-1_{phase_list[0]}_scale+tlrc.HEAD"
+                parent_dir,
+                "derivatives",
+                i,
+                j,
+                f"run-1_{phase_list[0]}_scale+tlrc.HEAD",
             )
         ):
 
@@ -57,7 +56,7 @@ for i in subj_list:
                 -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                 --account iacc_madlab --qos pq_madlab \
                 --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-                python {code_dir}/step1_preproc.py {i} {j} {phase_list} {work_dir} {blip_toggle}"
+                python {code_dir}/step1_preproc.py {i} {j}"
             """
 
             sbatch_submit = subprocess.Popen(
