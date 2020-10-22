@@ -14,13 +14,16 @@ Notes
 
 
 TODO:
-  1) Update template? Referencing special template/priors
-  2) Update censor limit to 0.05 rather than 0.1?
+  1) Test second half of fmap 3dcopy (if IntendedFor)
+        and copy of fmap for e/run
+  2) Update template? Referencing special template/priors
+  3) Update censor limit to 0.05 rather than 0.1?
 """
 
 import json
 import os
-import sys
+
+# import sys
 import subprocess
 import fnmatch
 import math
@@ -122,7 +125,6 @@ for phase in phase_list:
             h_cmd = f"3dcopy {epi_nii} {epi_raw}"
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}epi", work_dir)
 
-# %%
 # fmap
 if blip_tog == 1:
 
@@ -164,6 +166,7 @@ if blip_tog == 1:
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}fmap", work_dir)
 
     # Make fmap for each epi run
+    #   Test this more
     for phase in phase_list:
         epi_list = [
             epi
@@ -290,14 +293,17 @@ with open(out_all, "w") as outfile:
 
 if not os.path.exists(os.path.join(work_dir, "epi_vrBase+orig.HEAD")):
     vr_script = os.path.join(work_dir, "do_volregBase.sh")
+    if blip_tog == 1:
+        run_str = "blip+orig"
+    else:
+        run_str = "+orig"
     with open(vr_script, "w") as script:
         script.write(
             """
             #!/bin/bash
             cd {}
-
             unset tr_counts block
-            numRuns=0; for i in run*+orig.HEAD; do
+            numRuns=0; for i in run-*_{}.HEAD; do
                 hold=`3dinfo -ntimes ${{i%.*}}`
                 tr_counts+="$hold "
                 block[$numRuns]=${{i%+*}}
@@ -316,9 +322,9 @@ if not os.path.exists(os.path.join(work_dir, "epi_vrBase+orig.HEAD")):
                 let c=$[$c+1]
             done
 
-            3dbucket -prefix epi_vrBase ${{baseRun}}_blip+orig"[${{minouttr}}]"
+            3dbucket -prefix epi_vrBase ${{baseRun}}+orig"[${{minouttr}}]"
             """.format(
-                work_dir
+                work_dir, run_str
             )
         )
 
@@ -367,7 +373,7 @@ h_cmd = f"""
     cp awpy/anat.un.aff.qw_WARP.nii .
 """
 if not os.path.exists(os.path.join(work_dir, "struct_ns+tlrc.HEAD")):
-    func_sbatch(h_cmd, 4, 4, 4, f"{subj_num}dif", work_dir)
+    func_sbatch(h_cmd, 2, 4, 4, f"{subj_num}dif", work_dir)
 
 for phase in phase_list:
     epi_list = func_epi_list(phase, work_dir)
@@ -438,7 +444,7 @@ for phase in phase_list:
             func_sbatch(h_cmd, 1, 4, 4, f"{subj_num}war", work_dir)
 
 # Determine minimum value, make mask
-#   beware the (jabberwocky) expanding braces in 3dMean
+#   beware the jabberwocky i.e. expanding braces in 3dMean
 for phase in phase_list:
     epi_list = func_epi_list(phase, work_dir)
     h_cmd = f"""
@@ -574,6 +580,11 @@ for phase in phase_list:
             """
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}scale", work_dir)
 
+# Clean up
+if os.path.exists(os.path.join(work_dir, f"run-1_{phase_list[0]}+tlrc.HEAD")):
+    os.remove(os.path.join(work_dir, "tmp_*"))
+    os.remove(os.path.join(work_dir, "sbatch*"))
+    os.remove(os.path.join(work_dir, "blip_*"))
 
 # %%
 # def main():
