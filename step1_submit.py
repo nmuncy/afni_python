@@ -26,7 +26,7 @@ import time
 code_dir = "/home/nmuncy/compute/afni_python"
 work_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
-phase_list = ["loc"]
+phase_list = ["vCAT"]
 blip_toggle = 1  # 1 = on, 0 = off
 
 # set up stdout/err capture
@@ -38,11 +38,10 @@ os.makedirs(out_dir)
 
 # submit job for each subj/sess/phase
 subj_list = os.listdir(os.path.join(work_dir, "dset"))
+subj_list.sort()
 
-# %%
 for i in subj_list:
     for j in sess_list:
-        # for k in phase_list:
         if not os.path.exists(
             os.path.join(
                 work_dir, "derivatives", i, j, f"run-1_{phase_list[0]}_scale+tlrc.HEAD"
@@ -67,5 +66,5 @@ for i in subj_list:
             job_id, error = sbatch_submit.communicate()
             print(job_id)
 
-            time.sleep(1)
+            time.sleep(30)
 # %%
