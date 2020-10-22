@@ -1,5 +1,7 @@
 #!/bin/bash
 
+module load r-3.6.3-gcc-8.2.0-s6lqv6i
+
 behavDir=/home/data/madlab/Mattfeld_vCAT/behav
 derivDir=/scratch/madlab/nate_vCAT/derivatives
 codeDir=~/compute/afni_python
