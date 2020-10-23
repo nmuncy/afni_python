@@ -1,29 +1,29 @@
 """
 Notes
 
-Timing files should be named "tf_phase_behavior.txt"
+Timing files must be named "tf_phase_behavior.txt"
     e.g. tf_vCAT_Hit.txt, or tf_test_FA.txt
 
 If using dmBLOCK option, duration should be married
     to start time.
 
-GAM, 2GAM base models not using duration - just use
+Decon base models = GAM, 2GAM, dmBLOCK, TENT
+    GAM, 2GAM base models not using duration - just use
     BLOCK!
 
 TODO:
     1) Finish writing/testing for multiple phases
-    2) Test different basis models
 """
 
 # %%
 import os
-
-# import re
-import sys
-
-# import subprocess
 import fnmatch
+from argparse import ArgumentParser
 from step1_preproc import func_sbatch
+
+# from step3_submit import phase_list as h_phase
+# from step3_submit import decon_type as h_decon_type
+# from step3_submit import deriv_dir as h_deriv_dir
 
 
 def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):
@@ -49,35 +49,48 @@ def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):
 
     h_out = f"{h_str}_{h_type}"
 
-    cmd_decon = f""" 3dDeconvolve \\
-        -x1D_stop \\
-        -input {in_files} \\
-        -censor {cen_file} \\
-        {reg_base} \\
-        -polort A \\
-        -float \\
-        -local_times \\
-        -num_stimts {len(tf_dict.keys())} \\
-        {reg_beh} \\
-        -jobs 1 \\
-        -x1D X.{h_out}.xmat.1D \\
-        -xjpeg X.{h_out}.jpg \\
-        -x1D_uncensored X.{h_out}.nocensor.xmat.1D \\
-        -bucket {h_out}_stats \\
-        -cbucket {h_out}_cbucket \\
-        -errts {h_out}_errts
+    cmd_decon = f"""
+        3dDeconvolve \\
+            -x1D_stop \\
+            -input {in_files} \\
+            -censor {cen_file} \\
+            {reg_base} \\
+            -polort A \\
+            -float \\
+            -local_times \\
+            -num_stimts {len(tf_dict.keys())} \\
+            {reg_beh} \\
+            -jobs 1 \\
+            -x1D X.{h_out}.xmat.1D \\
+            -xjpeg X.{h_out}.jpg \\
+            -x1D_uncensored X.{h_out}.nocensor.xmat.1D \\
+            -bucket {h_out}_stats \\
+            -cbucket {h_out}_cbucket \\
+            -errts {h_out}_errts
     """
     return cmd_decon
 
 
+# receive arguments
+def func_argparser():
+    parser = ArgumentParser("Receive Bash args from wrapper")
+    parser.add_argument("h_sub", help="Subject ID")
+    parser.add_argument("h_ses", help="Session")
+    parser.add_argument("h_dct", help="Decon Type")
+    parser.add_argument("h_der", help="Derivatives Directory")
+    parser.add_argument("h_phl", nargs="+", help="Phase List")
+    return parser
+
+
 # %%
-def func_job(phase, decon_type, work_dir):
+def func_job(phase, decon_type, work_dir, sub_num):
 
     # # For testing
     # subj = "sub-006"
     # sess = "ses-S1"
     # phase = "vCAT"
     # decon_type = "GAM"
+    # sub_num = "006"
 
     # par_dir = "/scratch/madlab/nate_vCAT"
     # work_dir = os.path.join(par_dir, "derivatives", subj, sess)
@@ -132,12 +145,7 @@ def func_job(phase, decon_type, work_dir):
             -expr "a*b" > censor_{phase}_combined.1D
     """
     if not os.path.exists(os.path.join(work_dir, f"censor_{phase}_combined.1D")):
-        func_sbatch(h_cmd, 1, 1, 1, "motion", work_dir)
-
-    # step check
-    if not os.path.exists(os.path.join(work_dir, f"motion_{phase}_censor.1D")):
-        print(f"Step 1 failed to produce motion_{phase}_censor.1D. Exiting.")
-        exit
+        func_sbatch(h_cmd, 1, 1, 1, f"{sub_num}mot", work_dir)
 
     # %%
     """
@@ -164,7 +172,7 @@ def func_job(phase, decon_type, work_dir):
     # Get timing files - all are named tf_phase_beh.txt
     #   e.g. tf_vCAT_hit.txt
     tf_list = [
-        x for x in os.listdir(work_dir) if fnmatch.fnmatch(x, f"tf*{phase}*.txt")
+        x for x in os.listdir(work_dir) if fnmatch.fnmatch(x, f"tf_{phase}*.txt")
     ]
 
     # make timing file dictionary
@@ -191,7 +199,7 @@ def func_job(phase, decon_type, work_dir):
     # run decon script to generate matrices
     if not os.path.exists(os.path.join(work_dir, f"X.{phase}_{decon_type}.xmat.1D")):
         h_cmd = f"cd {work_dir} \n source {decon_script}"
-        func_sbatch(h_cmd, 1, 1, 1, "decon", work_dir)
+        func_sbatch(h_cmd, 1, 1, 1, f"{sub_num}dcn", work_dir)
 
     # check
     if not os.path.exists(os.path.join(work_dir, f"X.{phase}_{decon_type}.xmat.1D")):
@@ -207,31 +215,24 @@ def func_job(phase, decon_type, work_dir):
                 -expr 'a*bool(b)' -datum float -prefix tmp_allRuns_{phase}_WMe
             3dmerge -1blur_fwhm 20 -doall -prefix {phase}_WMe_rall tmp_allRuns_{phase}_WMe+tlrc
         """
-        func_sbatch(h_cmd, 1, 1, 4, "wmts", work_dir)
-
-    # check
-    if not os.path.exists(os.path.join(work_dir, f"{phase}_WMe_rall+tlrc.HEAD")):
-        print(f"Step 2 failed to produce {phase}_WMe_rall+tlrc. Exiting.")
-        exit
+        func_sbatch(h_cmd, 1, 4, 1, f"{sub_num}wts", work_dir)
 
     # run REML
     if not os.path.exists(
         os.path.join(work_dir, f"{phase}_{decon_type}_stats_REML+tlrc.HEAD")
     ):
         h_cmd = f"cd {work_dir} \n tcsh -x {phase}_{decon_type}_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
-        func_sbatch(h_cmd, 10, 6, 4, "reml", work_dir)
+        func_sbatch(h_cmd, 5, 4, 6, f"{sub_num}rml", work_dir)
 
 
 def main():
 
-    subj = str(sys.argv[1])
-    sess = str(sys.argv[2])
-    h_phase = str(sys.argv[3])
-    h_decon_type = str(sys.argv[4])
-    h_deriv_dir = str(sys.argv[5])
+    args = func_argparser().parse_args()
+    h_work_dir = os.path.join(args.h_der, args.h_sub, args.h_ses)
+    h_sub_num = args.h_sub.split("-")[1]
 
-    h_work_dir = os.path.join(h_deriv_dir, subj, sess)
-    func_job(h_phase, h_decon_type, h_work_dir)
+    for h_phase in args.h_phl:
+        func_job(h_phase, args.h_dct, h_work_dir, h_sub_num)
 
 
 if __name__ == "__main__":
