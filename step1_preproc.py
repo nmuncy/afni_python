@@ -80,9 +80,9 @@ def func_argparser():
     parser = ArgumentParser("Receive Bash args from wrapper")
     parser.add_argument("h_sub", help="Subject ID")
     parser.add_argument("h_ses", help="Session")
-    parser.add_argument("h_phl", help="Phase List")
-    parser.add_argument("h_blt", help="Blip Toggle")
+    parser.add_argument("h_blt", type=int, help="Blip Toggle")
     parser.add_argument("h_par", help="Parent Directory")
+    parser.add_argument("h_phl", nargs="+", help="Phase List")
     return parser
 
 

@@ -40,7 +40,7 @@ def main():
     subj_list.sort()
 
     for i in subj_list:
-        # i = subj_list[1]
+        # i = subj_list[2]
         for j in sess_list:
             if not os.path.exists(
                 os.path.join(
@@ -62,7 +62,7 @@ def main():
                         --account iacc_madlab --qos pq_madlab \
                         --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
                         python {code_dir}/step1_preproc.py {i} {j} \
-                        {phase_list} {blip_toggle} {parent_dir}"
+                        {blip_toggle} {parent_dir} {' '.join(phase_list)}"
                 """
                 sbatch_submit = subprocess.Popen(
                     sbatch_job, shell=True, stdout=subprocess.PIPE
