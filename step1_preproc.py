@@ -22,15 +22,11 @@ TODO:
 
 import json
 import os
-import sys
 import subprocess
 import fnmatch
 import math
 import time
-import errno
-from step1_submit import phase_list as h_pl
-from step1_submit import blip_toggle as h_blip_tog
-from step1_submit import parent_dir as h_par_dir
+from argparse import ArgumentParser
 
 
 # Submit jobs to slurm, check & wait for job to finish
@@ -77,6 +73,17 @@ def func_epi_list(phase, h_dir):
     ]
     h_list.sort()
     return h_list
+
+
+# receive arguments
+def func_argparser():
+    parser = ArgumentParser("Receive Bash args from wrapper")
+    parser.add_argument("h_sub", help="Subject ID")
+    parser.add_argument("h_ses", help="Session")
+    parser.add_argument("h_phl", help="Phase List")
+    parser.add_argument("h_blt", help="Blip Toggle")
+    parser.add_argument("h_par", help="Parent Directory")
+    return parser
 
 
 # %%
@@ -590,22 +597,15 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
 # %%
 def main():
 
-    h_subj = str(sys.argv[1])
-    h_sess = str(sys.argv[2])
-
-    h_data_dir = os.path.join(h_par_dir, "dset", h_subj, h_sess)
-    h_work_dir = os.path.join(h_par_dir, "derivatives", h_subj, h_sess)
+    args = func_argparser().parse_args()
+    h_data_dir = os.path.join(args.h_par, "dset", args.h_sub, args.h_ses)
+    h_work_dir = os.path.join(args.h_par, "derivatives", args.h_sub, args.h_ses)
 
     if not os.path.exists(h_work_dir):
         os.makedirs(h_work_dir)
-        # try:
-        #     os.makedirs(h_work_dir, exist_ok=True)
-        # except OSError as e:
-        #     if e.errno != errno.EEXIST:
-        #         raise
 
-    print(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
-    # func_preproc(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
+    # print(h_data_dir, h_work_dir, args.h_sub, args.h_ses, args.h_phl, args.h_blt)
+    func_preproc(h_data_dir, h_work_dir, args.h_sub, args.h_ses, args.h_phl, args.h_blt)
 
 
 if __name__ == "__main__":
