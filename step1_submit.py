@@ -12,7 +12,6 @@ phase_list = list of phases gathered within a single session.
 
 # %%
 import os
-import errno
 from datetime import datetime
 import subprocess
 import time
@@ -30,11 +29,8 @@ out_dir = os.path.join(
     parent_dir, f'derivatives/Slurm_out/TS1_{current_time.strftime("%H%M_%d-%m-%y")}'
 )
 if not os.path.exists(out_dir):
-    try:
-        os.makedirs(out_dir, 0o700, exist_ok=True)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
+    os.makedirs(out_dir)
+
 
 # submit job for each subj/sess/phase
 subj_list = os.listdir(os.path.join(parent_dir, "dset"))
