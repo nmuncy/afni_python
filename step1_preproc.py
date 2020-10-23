@@ -27,6 +27,10 @@ import subprocess
 import fnmatch
 import math
 import time
+import errno
+from step1_submit import phase_list as h_pl
+from step1_submit import blip_toggle as h_blip_tog
+from step1_submit import parent_dir as h_par_dir
 
 
 # Submit jobs to slurm, check & wait for job to finish
@@ -589,15 +593,16 @@ def main():
     h_subj = str(sys.argv[1])
     h_sess = str(sys.argv[2])
 
-    from step1_submit import phase_list as h_pl
-    from step1_submit import blip_toggle as h_blip_tog
-    from step1_submit import parent_dir as h_par_dir
-
     h_data_dir = os.path.join(h_par_dir, "dset", h_subj, h_sess)
     h_work_dir = os.path.join(h_par_dir, "derivatives", h_subj, h_sess)
 
     if not os.path.exists(h_work_dir):
         os.makedirs(h_work_dir)
+        # try:
+        #     os.makedirs(h_work_dir, exist_ok=True)
+        # except OSError as e:
+        #     if e.errno != errno.EEXIST:
+        #         raise
 
     print(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
     # func_preproc(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)

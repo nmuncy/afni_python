@@ -15,6 +15,7 @@ import os
 from datetime import datetime
 import subprocess
 import time
+import errno
 
 # set up
 code_dir = "/home/nmuncy/compute/afni_python"
@@ -30,6 +31,11 @@ out_dir = os.path.join(
 )
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
+    # try:
+    #     os.makedirs(out_dir, exist_ok=True)
+    # except OSError as e:
+    #     if e.errno != errno.EEXIST:
+    #         raise
 
 
 # submit job for each subj/sess/phase
