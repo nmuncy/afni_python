@@ -27,6 +27,7 @@ import subprocess
 import fnmatch
 import math
 import time
+import errno
 
 
 # Submit jobs to slurm, check & wait for job to finish
@@ -597,10 +598,14 @@ def main():
     h_work_dir = os.path.join(h_par_dir, "derivatives", h_subj, h_sess)
 
     if not os.path.exists(h_work_dir):
-        os.makedirs(h_work_dir)
+        try:
+            os.makedirs(h_work_dir, 0o700, exist_ok=True)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
 
-    # print(h_data_dir, h_work_dir, h_subj, h_sess, h_phase_list, h_blip_tog)
-    func_preproc(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
+    print(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
+    # func_preproc(h_data_dir, h_work_dir, h_subj, h_sess, h_pl, h_blip_tog)
 
 
 if __name__ == "__main__":

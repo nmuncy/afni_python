@@ -12,6 +12,7 @@ phase_list = list of phases gathered within a single session.
 
 # %%
 import os
+import errno
 from datetime import datetime
 import subprocess
 import time
@@ -20,7 +21,7 @@ import time
 code_dir = "/home/nmuncy/compute/afni_python"
 parent_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
-phase_list = ["vCAT"]
+phase_list = ["loc"]
 blip_toggle = 1  # 1 = on, 0 = off
 
 # set up stdout/err capture
@@ -28,7 +29,12 @@ current_time = datetime.now()
 out_dir = os.path.join(
     parent_dir, f'derivatives/Slurm_out/TS1_{current_time.strftime("%H%M_%d-%m-%y")}'
 )
-os.makedirs(out_dir)
+if not os.path.exists(out_dir):
+    try:
+        os.makedirs(out_dir, 0o700, exist_ok=True)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
 # submit job for each subj/sess/phase
 subj_list = os.listdir(os.path.join(parent_dir, "dset"))
@@ -65,5 +71,6 @@ for i in subj_list:
             job_id, error = sbatch_submit.communicate()
             print(job_id)
 
-            time.sleep(30)
+            time.sleep(5)
+
 # %%
