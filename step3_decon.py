@@ -21,10 +21,6 @@ import fnmatch
 from argparse import ArgumentParser
 from step1_preproc import func_sbatch
 
-# from step3_submit import phase_list as h_phase
-# from step3_submit import decon_type as h_decon_type
-# from step3_submit import deriv_dir as h_deriv_dir
-
 
 def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):
 
@@ -222,7 +218,7 @@ def func_job(phase, decon_type, work_dir, sub_num):
         os.path.join(work_dir, f"{phase}_{decon_type}_stats_REML+tlrc.HEAD")
     ):
         h_cmd = f"cd {work_dir} \n tcsh -x {phase}_{decon_type}_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
-        func_sbatch(h_cmd, 5, 4, 6, f"{sub_num}rml", work_dir)
+        func_sbatch(h_cmd, 1, 4, 6, f"{sub_num}rml", work_dir)
 
 
 def main():
@@ -232,6 +228,7 @@ def main():
     h_sub_num = args.h_sub.split("-")[1]
 
     for h_phase in args.h_phl:
+        # print(h_phase, args.h_dct, h_work_dir, h_sub_num)
         func_job(h_phase, args.h_dct, h_work_dir, h_sub_num)
 
 

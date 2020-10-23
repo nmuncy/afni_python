@@ -21,7 +21,7 @@ def main():
     code_dir = "/home/nmuncy/compute/afni_python"
     work_dir = "/scratch/madlab/nate_vCAT"
     sess_list = ["ses-S1"]
-    phase_list = ["vCAT"]
+    phase_list = ["loc"]
     decon_type = "2GAM"
 
     # set up stdout/err capture
@@ -34,6 +34,7 @@ def main():
 
     # submit job for each subj/sess/phase
     subj_list = [x for x in os.listdir(deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
+    subj_list.sort()
 
     # %%
     for i in subj_list:
@@ -52,20 +53,19 @@ def main():
 
                 sbatch_job = f"""
                     sbatch \
-                    -J "TS3{i.split("-")[1]}" -t 10:00:00 --mem=4000 --ntasks-per-node=1 \
+                    -J "TS3{i.split("-")[1]}" -t 03:00:00 --mem=4000 --ntasks-per-node=1 \
                     -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                     --account iacc_madlab --qos pq_madlab \
                     --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
                     python {code_dir}/step3_decon.py {i} {j} {decon_type} \
                     {deriv_dir} {' '.join(phase_list)}"
                 """
-
                 sbatch_submit = subprocess.Popen(
                     sbatch_job, shell=True, stdout=subprocess.PIPE
                 )
                 job_id = sbatch_submit.communicate()[0]
                 print(job_id)
-                time.sleep(30)
+                time.sleep(5)
 
 
 if __name__ == "__main__":
