@@ -81,6 +81,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
     (baseline regressors) from scaled data.
     """
     subj_dir = os.path.join(work_dir, subj, ses)
+    subj_num = subj.split("-")[1]
 
     # get TR
     h_cmd = (
@@ -132,7 +133,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
             3dTcat -prefix tmp_all_runs_{phase} -tr {len_tr} {" ".join(scale_list)}
             3dcalc -a tmp_all_runs_{phase}+tlrc -b tmp_effNoInt_{phase}+tlrc -expr 'a-b' -prefix CleanData_{phase}
         """
-        func_sbatch(h_cmd, 1, 4, 1, "clean", subj_dir)
+        func_sbatch(h_cmd, 1, 4, 1, f"{subj_num}cle", subj_dir)
 
     # %%
     """
@@ -185,7 +186,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                 -x1D HRF_model.1D -x1D_stop
             1dUpsample {res_multiplier} HRF_model.1D > HRF_model_us.1D
         """
-        func_sbatch(h_cmd, 1, 1, 1, "hrf", subj_dir)
+        func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}hrf", subj_dir)
 
     # get seed TS, solve RHS
     for key in seed_dict:
@@ -199,7 +200,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                     -prefix Seed_{key} -
                 3dmaskave -quiet -mask Seed_{key}+tlrc CleanData_{phase}+tlrc > Seed_{key}_orig.1D
             """
-            func_sbatch(h_cmd, 1, 1, 1, "mkseed", subj_dir)
+            func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}mksd", subj_dir)
 
         # solve RHS, then upsample
         #   I want to use -l2lasso, but I'm scared
@@ -210,7 +211,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                 1dtranspose tmp.1D > Seed_{key}_neural.1D
                 1dUpsample {res_multiplier} Seed_{key}_neural.1D > Seed_{key}_neural_us.1D
             """
-            func_sbatch(h_cmd, 8, 1, 4, "faltung", subj_dir)
+            func_sbatch(h_cmd, 8, 1, 4, f"{subj_num}flt", subj_dir)
 
     # %%
     """
@@ -245,7 +246,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                     -min_frac 0.3 -timing_to_1D Beh_{h_beh}_bin.1D
                 awk '{{for(i=0;i<{res_multiplier};i++)print}}' Beh_{h_beh}_bin.1D > Beh_{h_beh}_us.1D
             """
-            func_sbatch(h_cmd, 1, 1, 1, f"beh{h_beh}", subj_dir)
+            func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}{h_beh}", subj_dir)
 
         # multiply beh bin file by clean neuro, convolve with HRF
         for key in seed_dict:
@@ -259,7 +260,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                     waver -FILE {1 / res_multiplier} HRF_model_us.1D -input Seed_{key}_{h_beh}_neural_us.1D \
                         -numout {round((sum(run_len) / len_tr) * res_multiplier)} > Seed_{key}_{h_beh}_bold_us.1D
                 """
-                func_sbatch(h_cmd, 2, 1, 1, "behTS", subj_dir)
+                func_sbatch(h_cmd, 2, 1, 1, f"{subj_num}bts", subj_dir)
 
             # Downsample, bash > python
             if not os.path.exists(
@@ -270,7 +271,7 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
                     cat Seed_{key}_{h_beh}_bold_us.1D | \
                         awk -v n={res_multiplier} 'NR%n==0' > Final_{key}_{h_beh}_timeSeries.1D
                 """
-                func_sbatch(h_cmd, 1, 1, 1, "dsts", subj_dir)
+                func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}ds", subj_dir)
 
     # %%
     """
@@ -322,14 +323,14 @@ def func_job(work_dir, subj, ses, phase, decon_type, seed_dict, stim_dur):
 
         # run decon script to generate matrices
         h_cmd = f"cd {subj_dir} \n source {decon_script}"
-        func_sbatch(h_cmd, 1, 1, 1, "deconPPI", subj_dir)
+        func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}dcn", subj_dir)
 
     # run REML
     if not os.path.exists(
         os.path.join(subj_dir, f"{phase}_{decon_type}_ppi_stats_REML+tlrc.HEAD")
     ):
         h_cmd = f"cd {subj_dir} \n tcsh -x {phase}_{decon_type}_ppi_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
-        func_sbatch(h_cmd, 10, 4, 6, "reml", subj_dir)
+        func_sbatch(h_cmd, 10, 4, 6, f"{subj_num}rml", subj_dir)
 
 
 def main():
