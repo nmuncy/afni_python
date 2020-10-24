@@ -344,18 +344,7 @@ def main():
     with open(os.path.join(h_work_dir, h_subj, h_ses, "seed_dict.json")) as json_file:
         h_seed_dict = json.load(json_file)
 
-    # print(
-    #     f"""
-    #     subj = {h_subj}
-    #     sess = {h_ses}
-    #     phase = {h_phase}
-    #     decon = {h_decon_type}
-    #     work = {h_work_dir}
-    #     seeds = {h_seed_dict}
-    #     stim = {h_stim_dur}
-    # """
-    # )
-
+    # print(h_work_dir, h_subj, h_ses, h_phase, h_decon_type, h_seed_dict, h_stim_dur)
     func_job(h_work_dir, h_subj, h_ses, h_phase, h_decon_type, h_seed_dict, h_stim_dur)
 
 
