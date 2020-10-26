@@ -20,6 +20,6 @@ for i in vCAT*; do
 	outDir=${derivDir}/${subj}/ses-S1
 
 	if [ -d $outDir ]; then
-		Rscript ${codeDir}/step2_timingFiles_localizer.R $dataDir $outDir $i $numRuns
+		Rscript ${codeDir}/gp_step2_timingFiles_localizer.R $dataDir $outDir $i $numRuns
 	fi
 done

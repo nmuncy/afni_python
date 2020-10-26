@@ -19,7 +19,7 @@ TODO:
 import os
 import fnmatch
 from argparse import ArgumentParser
-from step1_preproc import func_sbatch
+from gp_step1_preproc import func_sbatch
 
 
 def func_decon(run_files, mot_files, tf_dict, cen_file, h_str, h_type):

@@ -17,14 +17,15 @@ import subprocess
 import time
 
 
-def main():
+# set up
+code_dir = "/home/nmuncy/compute/afni_python"
+parent_dir = "/scratch/madlab/nate_vCAT"
+sess_list = ["ses-S1"]
+phase_list = ["loc"]
+blip_toggle = 1  # 1 = on, 0 = off
 
-    # set up
-    code_dir = "/home/nmuncy/compute/afni_python"
-    parent_dir = "/scratch/madlab/nate_vCAT"
-    sess_list = ["ses-S1"]
-    phase_list = ["loc"]
-    blip_toggle = 1  # 1 = on, 0 = off
+
+def main():
 
     # set up stdout/err capture
     current_time = datetime.now()
@@ -61,7 +62,7 @@ def main():
                         -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                         --account iacc_madlab --qos pq_madlab \
                         --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-                        python {code_dir}/step1_preproc.py {i} {j} \
+                        python {code_dir}/gp_step1_preproc.py {i} {j} \
                         {blip_toggle} {parent_dir} {' '.join(phase_list)}"
                 """
                 sbatch_submit = subprocess.Popen(

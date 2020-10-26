@@ -17,16 +17,17 @@ import json
 import time
 
 
-def main():
+# set up
+code_dir = "/home/nmuncy/compute/afni_python"
+work_dir = "/scratch/madlab/nate_vCAT"
+sess_list = ["ses-S1"]
+phase_list = ["loc"]
+decon_type = "2GAM"
+seed_dict = {"LHC": "-24 -12 -22"}
+stim_dur = 2
 
-    # set up
-    code_dir = "/home/nmuncy/compute/afni_python"
-    work_dir = "/scratch/madlab/nate_vCAT"
-    sess_list = ["ses-S1"]
-    phase_list = ["loc"]
-    decon_type = "2GAM"
-    seed_dict = {"LHC": "-24 -12 -22"}
-    stim_dur = 2
+
+def main():
 
     # set up stdout/err capture
     deriv_dir = os.path.join(work_dir, "derivatives")
@@ -66,7 +67,7 @@ def main():
                         -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                         --account iacc_madlab --qos pq_madlab \
                         --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-                        python {code_dir}/ppi_job.py {i} {j} {k} {decon_type} {deriv_dir} {stim_dur}"
+                        python {code_dir}/ppi_step1_job.py {i} {j} {k} {decon_type} {deriv_dir} {stim_dur}"
                     """
 
                     sbatch_submit = subprocess.Popen(

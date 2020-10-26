@@ -16,13 +16,15 @@ import subprocess
 import time
 
 
+# set up
+code_dir = "/home/nmuncy/compute/afni_python"
+work_dir = "/scratch/madlab/nate_vCAT"
+sess_list = ["ses-S1"]
+phase_list = ["loc"]
+decon_type = "2GAM"
+
+
 def main():
-    # set up
-    code_dir = "/home/nmuncy/compute/afni_python"
-    work_dir = "/scratch/madlab/nate_vCAT"
-    sess_list = ["ses-S1"]
-    phase_list = ["loc"]
-    decon_type = "2GAM"
 
     # set up stdout/err capture
     deriv_dir = os.path.join(work_dir, "derivatives")
@@ -36,7 +38,6 @@ def main():
     subj_list = [x for x in os.listdir(deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
     subj_list.sort()
 
-    # %%
     for i in subj_list:
         for j in sess_list:
             if not os.path.exists(
@@ -57,7 +58,7 @@ def main():
                     -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                     --account iacc_madlab --qos pq_madlab \
                     --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-                    python {code_dir}/step3_decon.py {i} {j} {decon_type} \
+                    python {code_dir}/gp_step3_decon.py {i} {j} {decon_type} \
                     {deriv_dir} {' '.join(phase_list)}"
                 """
                 sbatch_submit = subprocess.Popen(
