@@ -1,10 +1,14 @@
 """
 Notes
+
+Stim dur is currently hardcoded to 1s
 """
 # %%
 import subprocess
 import fnmatch
 import os
+import pandas as pd
+import numpy as np
 from gp_step1_preproc import func_sbatch
 
 
@@ -148,7 +152,6 @@ for count, phase in enumerate(task_dict.keys()):
                 3dTcat -prefix tmp_run-{run}_{phase}_CleanData -tr {len_tr} "CleanData_{phase}+tlrc[{beg_vol}..{end_vol}]"
                 3dcopy tmp_run-{run}_{phase}_CleanData+tlrc {bold_dir}/bold.nii.gz
             """
-            # print(h_cmd)
             func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}spl", subj_dir)
         beg_vol += len_run
         end_vol += len_run
@@ -157,5 +160,56 @@ for count, phase in enumerate(task_dict.keys()):
 # %%
 """
 Step 3: Organize timing files
-
 """
+for count, phase in enumerate(task_dict):
+    cond_list = task_dict[phase]
+
+    # split timing files into 1D
+    for cond in cond_list:
+        h_cmd = f"module load afni-20.2.06 \n timing_tool.py -timing {subj_dir}/tf_{phase}_{cond}.txt -tr {len_tr} -stim_dur 1 -run_len {len_run * len_tr} -min_frac 0.3 -timing_to_1D {subj_dir}/tmp_tf_{phase}_{cond} -per_run_file"
+        h_spl = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+        print(h_spl.communicate())
+
+    # make attribute files for e/run
+    for run in range(1, num_runs + 1):
+
+        # determine split tf files
+        tf_list = [
+            x
+            for x in os.listdir(subj_dir)
+            if fnmatch.fnmatch(x, f"tmp_tf_{phase}*_r0{run}.1D")
+        ]
+        tf_list.sort()
+
+        # make df
+        h_df = pd.concat(
+            [
+                pd.read_csv(os.path.join(subj_dir, item), names=[item.split("_")[3]])
+                for item in tf_list
+            ],
+            axis=1,
+        )
+        for cond in cond_list:
+            h_df.loc[h_df[cond] > 0, "att"] = cond
+        h_df = h_df.replace(np.nan, "base", regex=True)
+
+        # subset df, write
+        #   add col of 0s for reason?
+        df_out = pd.DataFrame(h_df["att"])
+        df_out["last"] = 0
+        h_out = os.path.join(
+            subj_dir, "BOLD", f"task00{count+1}_run00{run}", "attributes.txt"
+        )
+        np.savetxt(h_out, df_out.values, fmt="%s", delimiter=" ")
+
+        # # onset times
+        # model_dir = os.path.join(
+        #     subj_dir, "model", "onsets", f"task00{count+1}_run00{run}"
+        # )
+        # if not os.path.exists(model_dir):
+        #     os.makedirs(model_dir)
+        # for cc, cond in enumerate(cond_list):
+        #     with open(os.path.join(model_dir, f"cond00{cc+1}.txt"), "w") as f_cond:
+
+
+# %%
