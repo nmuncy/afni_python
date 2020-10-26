@@ -24,14 +24,6 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
         Should I just train on deconvolved sub-bricks?
     """
 
-    # # For testing
-    # subj = "sub-005"
-    # subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
-    # decon_type = "2GAM"
-    # len_tr = 1.76
-    # task_dict = {"loc": ["face", "scene", "num"]}
-    # beh_dur = 1
-
     # Work
     subj_num = subj.split("-")[1]
 
@@ -130,7 +122,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
             c3d tmp_GM.nii.gz -thresh 0.1 10 1 0 -o tmp_GM_bin.nii.gz
 
             3dfractionize -template CleanData_{phase}+tlrc -input tmp_GM_bin.nii.gz -prefix tmp_GM_res.nii.gz
-            3dcalc -a tmp_GM_res.nii.gz -prefix tmp_GM_res_bin.nii.gz -expr "step(a-3000)"
+            3dcalc -a tmp_GM_res.nii.gz -prefix tmp_GM_res_bin.nii.gz -expr 'step(a-3000)'
 
             3dcopy mask_epi_anat+tlrc tmp_mask_epi_anat.nii.gz
             c3d tmp_mask_epi_anat.nii.gz tmp_GM_res_bin.nii.gz -multiply -o {mask_dir}/GM_int_mask.nii.gz
@@ -180,8 +172,9 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
         cond_list = task_dict[phase]
 
         # split timing files into 1D
+        len_sec = len_run * len_tr
         for cond in cond_list:
-            h_cmd = f"module load afni-20.2.06 \n timing_tool.py -timing {subj_dir}/tf_{phase}_{cond}.txt -tr {len_tr} -stim_dur {beh_dur} -run_len {len_run * len_tr} -min_frac 0.3 -timing_to_1D {subj_dir}/tmp_tf_{phase}_{cond} -per_run_file"
+            h_cmd = f"module load afni-20.2.06 \n timing_tool.py -timing {subj_dir}/tf_{phase}_{cond}.txt -tr {len_tr} -stim_dur {beh_dur} -run_len {len_sec} -min_frac 0.3 -timing_to_1D {subj_dir}/tmp_tf_{phase}_{cond} -per_run_file"
             h_spl = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
             print(h_spl.communicate())
 
@@ -235,6 +228,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
                 df_out = pd.DataFrame(h_df.iloc[run - 1])
                 df_out["dur"] = beh_dur
                 df_out["last"] = 1
+                df_out.drop(df_out.tail(1).index, inplace=True)
                 np.savetxt(h_out, df_out.values, fmt="%s")
 
 
@@ -252,10 +246,23 @@ def func_argparser():
 # %%
 def main():
 
+    # # For testing
+    # h_subj = "sub-007"
+    # h_subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
+    # h_decon_type = "2GAM"
+    # h_len_tr = 1.76
+    # h_task_dict = {"loc": ["face", "scene", "num"]}
+    # h_beh_dur = 1
+    # func_job(h_subj, h_subj_dir, h_decon_type, h_len_tr, h_task_dict, h_beh_dur)
+
     args = func_argparser().parse_args()
     # print(args.h_sub, args.h_dir, args.h_dct, args.h_trl, h_task_dict, args.h_beh)
-    func_job(args.h_sub, args.h_dir, args.h_dct, args.h_trl, h_task_dict, args.h_beh)
+    func_job(
+        args.h_sub, args.h_dir, args.h_dct, float(args.h_trl), h_task_dict, args.h_beh
+    )
 
 
 if __name__ == "__main__":
     main()
+
+# %%

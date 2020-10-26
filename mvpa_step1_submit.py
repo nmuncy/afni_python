@@ -73,28 +73,28 @@ def main():
     )
     os.makedirs(out_dir)
 
-    # for subj in subj_list:
-    subj = subj_list[2]
+    for subj in subj_list:
+        # subj = subj_list[2]
 
-    # Set stdout/err file
-    h_out = os.path.join(out_dir, f"out_{subj}.txt")
-    h_err = os.path.join(out_dir, f"err_{subj}.txt")
+        # Set stdout/err file
+        h_out = os.path.join(out_dir, f"out_{subj}.txt")
+        h_err = os.path.join(out_dir, f"err_{subj}.txt")
 
-    # submit command
-    subj_dir = os.path.join(deriv_dir, subj, sess)
-    sbatch_job = f"""
-        sbatch \
-        -J "PPI{subj.split("-")[1]}" -t 2:00:00 --mem=1000 --ntasks-per-node=1 \
-        -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
-        --account iacc_madlab --qos pq_madlab \
-        --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-        python {code_dir}/mvpa_step1_setup.py {subj} {subj_dir} {decon_type} {len_tr} {beh_dur}"
-    """
+        # submit command
+        subj_dir = os.path.join(deriv_dir, subj, sess)
+        sbatch_job = f"""
+            sbatch \
+            -J "PPI{subj.split("-")[1]}" -t 2:00:00 --mem=1000 --ntasks-per-node=1 \
+            -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
+            --account iacc_madlab --qos pq_madlab \
+            --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
+            python {code_dir}/mvpa_step1_setup.py {subj} {subj_dir} {decon_type} {len_tr} {beh_dur}"
+        """
 
-    sbatch_submit = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
-    job_id = sbatch_submit.communicate()[0]
-    print(job_id)
-    time.sleep(1)
+        sbatch_submit = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
+        job_id = sbatch_submit.communicate()[0]
+        print(job_id)
+        time.sleep(1)
 
 
 if __name__ == "__main__":
