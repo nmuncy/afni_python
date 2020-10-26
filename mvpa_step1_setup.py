@@ -1,0 +1,125 @@
+"""
+Notes
+"""
+# %%
+import subprocess
+import fnmatch
+import os
+from gp_step1_preproc import func_sbatch
+
+
+# For testing
+subj = "sub-005"
+subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
+phase = "loc"
+decon_type = "2GAM"
+len_tr = 1.76
+
+
+# %%
+"""
+Step 1: Detrend
+
+Currently using "clean data" approach.
+
+Should I just train on deconvolved sub-bricks?
+"""
+subj_num = subj.split("-")[1]
+
+# get proper brick length
+#   REML appends an extra brick because
+#   "reasons". Account for AFNI's random
+#   0-1 indexing
+h_cmd = f"module load afni-20.2.06 \n 3dinfo -nv {subj_dir}/{phase}_{decon_type}_cbucket_REML+tlrc"
+h_len = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+len_wrong = h_len.communicate()[0].decode("utf-8").strip()
+len_right = int(len_wrong) - 2
+
+# list all scale files
+scale_list = [
+    x.split(".")[0]
+    for x in os.listdir(subj_dir)
+    if fnmatch.fnmatch(x, f"*{phase}*scale+tlrc.HEAD")
+]
+scale_list.sort()
+
+# make clean data
+if not os.path.exists(os.path.join(subj_dir, f"CleanData_{phase}+tlrc.HEAD")):
+
+    # list undesirable sub-bricks (those starting with Run or mot)
+    no_int = []
+    with open(os.path.join(subj_dir, f"X.{phase}_{decon_type}.xmat.1D")) as f:
+        h_file = f.readlines()
+        for line in h_file:
+            if line.__contains__("ColumnLabels"):
+                col_list = (
+                    line.replace("#", "").split('"')[1].replace(" ", "").split(";")
+                )
+                for i, j in enumerate(col_list):
+                    if fnmatch.fnmatch(j, "Run*") or fnmatch.fnmatch(j, "mot*"):
+                        no_int.append(f"{str(i)}")
+
+    # strip extra sub-brick, make clean data by removing
+    #   effects of no interest from concatenated runs
+    h_cmd = f"""
+        cd {subj_dir}
+        3dTcat -prefix tmp_{phase}_cbucket -tr {len_tr} "{phase}_{decon_type}_cbucket_REML+tlrc[0..{len_right}]"
+        3dSynthesize -prefix tmp_effNoInt_{phase} -matrix X.{phase}_{decon_type}.xmat.1D \
+            -cbucket tmp_{phase}_cbucket+tlrc -select {" ".join(no_int)} -cenfill nbhr
+        3dTcat -prefix tmp_all_runs_{phase} -tr {len_tr} {" ".join(scale_list)}
+        3dcalc -a tmp_all_runs_{phase}+tlrc -b tmp_effNoInt_{phase}+tlrc -expr 'a-b' -prefix CleanData_{phase}
+    """
+    func_sbatch(h_cmd, 1, 4, 1, f"{subj_num}cle", subj_dir)
+
+
+# %%
+"""
+Step 2:
+"""
+# pymvpa dirs
+py_dirs = ["BOLD", "anatomy", "model", "masks"]
+for i in py_dirs:
+    if not os.path.exists(os.path.join(subj_dir, i)):
+        os.makedirs(os.path.join(subj_dir, i))
+
+# anat
+if not os.path.exists(os.path.join(subj_dir, "anatomy/struct_ns.nii.gz")):
+    h_cmd = f"module load afni-20.2.06 \n 3dcopy {subj_dir}/struct_ns+tlrc {subj_dir}/anatomy/struct_ns.nii.gz"
+    h_job = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+    hold = h_job.communicate()[0]
+
+# %%
+# masks
+mask_dir = os.path.join(subj_dir, "masks", "orig")
+if not os.path.exists(mask_dir):
+    os.makedirs(mask_dir)
+
+# pull, binarize priors
+atropos_dict = {2: "GMc", 4: "GMs"}
+atropos_dir = "/home/data/madlab/atlases/vold2_mni/priors_ACT"
+for i in atropos_dict:
+    if not os.path.exists(os.path.join(subj_dir, f"tmp_{atropos_dict[i]}_bin.nii.gz")):
+        h_cmd = f"module load c3d/1.0.0 \n c3d {atropos_dir}/Prior{i}.nii.gz -thresh 0.3 1 1 0 -o {subj_dir}/tmp_{atropos_dict[i]}_bin.nii.gz"
+        h_mask = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+        out, err = h_mask.communicate()
+        print(out, err)
+
+# %%
+# make resampled GM-intersection mask
+if not os.path.exists(os.path.join(mask_dir, "GM_int_mask.nii.gz")):
+    h_cmd = f"""
+        module load c3d/1.0.0
+
+        cd {subj_dir}
+        c3d tmp_GMc_bin.nii.gz tmp_GMs_bin.nii.gz -add -o tmp_GM.nii.gz
+        c3d tmp_GM.nii.gz -thresh 0.1 10 1 0 -o tmp_GM_bin.nii.gz
+
+        3dfractionize -template CleanData_{phase}+tlrc -input tmp_GM_bin.nii.gz -prefix tmp_GM_res.nii.gz
+        3dcalc -a tmp_GM_res.nii.gz -prefix tmp_GM_res_bin.nii.gz -expr "step(a-3000)"
+
+        3dcopy mask_epi_anat+tlrc tmp_mask_epi_anat.nii.gz
+        c3d tmp_mask_epi_anat.nii.gz tmp_GM_res_bin.nii.gz -multiply -o {mask_dir}/GM_int_mask.nii.gz
+    """
+    func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}msk", subj_dir)
+
+# %%
