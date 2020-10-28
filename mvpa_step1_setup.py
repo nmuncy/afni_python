@@ -13,8 +13,7 @@ from mvpa_step1_submit import task_dict as h_task_dict
 
 
 # %%
-def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
-
+def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
     """
     Step 1: Detrend
 
@@ -26,6 +25,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
 
     # Work
     subj_num = subj.split("-")[1]
+    mvpa_dir = os.path.join(der_dir, f"mvpa/sub{subj_num}")
 
     for phase in task_dict.keys():
 
@@ -86,17 +86,17 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
     # pymvpa dirs
     py_dirs = ["BOLD", "anatomy", "model", "masks"]
     for i in py_dirs:
-        if not os.path.exists(os.path.join(subj_dir, i)):
-            os.makedirs(os.path.join(subj_dir, i))
+        if not os.path.exists(os.path.join(mvpa_dir, i)):
+            os.makedirs(os.path.join(mvpa_dir, i))
 
     # anat
-    if not os.path.exists(os.path.join(subj_dir, "anatomy/struct_ns.nii.gz")):
-        h_cmd = f"module load afni-20.2.06 \n 3dcopy {subj_dir}/struct_ns+tlrc {subj_dir}/anatomy/struct_ns.nii.gz"
+    if not os.path.exists(os.path.join(mvpa_dir, "anatomy/struct_ns.nii.gz")):
+        h_cmd = f"module load afni-20.2.06 \n 3dcopy {subj_dir}/struct_ns+tlrc {mvpa_dir}/anatomy/struct_ns.nii.gz"
         h_job = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
         print(h_job.communicate())
 
     # masks
-    mask_dir = os.path.join(subj_dir, "masks", "orig")
+    mask_dir = os.path.join(mvpa_dir, "masks", "orig")
     if not os.path.exists(mask_dir):
         os.makedirs(mask_dir)
 
@@ -108,7 +108,8 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
             os.path.join(subj_dir, f"tmp_{atropos_dict[i]}_bin.nii.gz")
         ):
             h_cmd = f"module load c3d/1.0.0 \n c3d {atropos_dir}/Prior{i}.nii.gz -thresh 0.3 1 1 0 -o {subj_dir}/tmp_{atropos_dict[i]}_bin.nii.gz"
-            h_mask = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+            h_mask = subprocess.Popen(
+                h_cmd, shell=True, stdout=subprocess.PIPE)
             out, err = h_mask.communicate()
             print(out, err)
 
@@ -141,7 +142,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
         beg_vol = 0
         end_vol = len_run - 1
         for run in range(1, num_runs + 1):
-            bold_dir = os.path.join(subj_dir, f"BOLD/task00{count+1}_run00{run}")
+            bold_dir = os.path.join(mvpa_dir, f"BOLD/task00{count+1}_run00{run}")
             if not os.path.exists(bold_dir):
                 os.makedirs(bold_dir)
             if not os.path.exists(os.path.join(bold_dir, "bold.nii.gz")):
@@ -208,13 +209,13 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur):
             df_out = pd.DataFrame(h_df["att"])
             df_out["last"] = 0
             h_out = os.path.join(
-                subj_dir, "BOLD", f"task00{count+1}_run00{run}", "attributes.txt"
+                mvpa_dir, "BOLD", f"task00{count+1}_run00{run}", "attributes.txt"
             )
             np.savetxt(h_out, df_out.values, fmt="%s", delimiter=" ")
 
             # onset times - onset dur 1?
             model_dir = os.path.join(
-                subj_dir, "model", "onsets", f"task00{count+1}_run00{run}"
+                mvpa_dir, "model", "onsets", f"task00{count+1}_run00{run}"
             )
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
@@ -240,6 +241,7 @@ def func_argparser():
     parser.add_argument("h_dct", help="Decon Type")
     parser.add_argument("h_trl", help="TR Length")
     parser.add_argument("h_beh", help="Behavior Duration")
+    parser.add_argument("h_der", help="Derivatives Directory")
     return parser
 
 
@@ -247,18 +249,20 @@ def func_argparser():
 def main():
 
     # # For testing
-    # h_subj = "sub-007"
+    # h_subj = "sub-005"
     # h_subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
     # h_decon_type = "2GAM"
     # h_len_tr = 1.76
     # h_task_dict = {"loc": ["face", "scene", "num"]}
     # h_beh_dur = 1
+    # h_der_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005"
     # func_job(h_subj, h_subj_dir, h_decon_type, h_len_tr, h_task_dict, h_beh_dur)
 
     args = func_argparser().parse_args()
     # print(args.h_sub, args.h_dir, args.h_dct, args.h_trl, h_task_dict, args.h_beh)
     func_job(
-        args.h_sub, args.h_dir, args.h_dct, float(args.h_trl), h_task_dict, args.h_beh
+        args.h_sub, args.h_dir, args.h_dct, float(
+            args.h_trl), h_task_dict, args.h_beh, args.h_der
     )
 
 
