@@ -23,6 +23,15 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
         Should I just train on deconvolved sub-bricks?
     """
 
+    # # For testing
+    # subj = "sub-005"
+    # subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
+    # decon_type = "2GAM"
+    # len_tr = 1.76
+    # task_dict = {"loc": ["face", "scene", "num"]}
+    # beh_dur = 1.25
+    # der_dir = "/scratch/madlab/nate_vCAT/derivatives"
+
     # Work
     subj_num = subj.split("-")[1]
     mvpa_dir = os.path.join(der_dir, f"mvpa/sub{subj_num}")
@@ -108,8 +117,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
             os.path.join(subj_dir, f"tmp_{atropos_dict[i]}_bin.nii.gz")
         ):
             h_cmd = f"module load c3d/1.0.0 \n c3d {atropos_dir}/Prior{i}.nii.gz -thresh 0.3 1 1 0 -o {subj_dir}/tmp_{atropos_dict[i]}_bin.nii.gz"
-            h_mask = subprocess.Popen(
-                h_cmd, shell=True, stdout=subprocess.PIPE)
+            h_mask = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
             out, err = h_mask.communicate()
             print(out, err)
 
@@ -162,22 +170,41 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
     1) Based on timing files (e.g. tf_loc_face.txt) from
         gp_step2.R. Will generate needed attribute files.
 
-        attributes.txt - one definition per volume
-        cond00?.txt - each condition type has own onset time
-            (onset duration amplitude(?) - 1.5 2 1)
-            ref condtion_key.txt file for definitions
+    2) attributes.txt - one attribute per volume
+        - written to sub*/BOLD/task*
 
-            Note - currently using float, problem?
+        - Issue from behavior duration, TR mismatch
+        resulting in holes.
+
+        - Fix - fill NaN with preceding attribute value
+        since study is a block design.
+
+    3) cond00?.txt - each condition/attribut type has own onset time
+        - ref condtion_key.txt file for definitions
+        - written to sub*/model/onsets/task*
+        - format = onset, block duration, 1
+            e.g. 157.5 22.5 1
+            duration is in volume time
     """
     for count, phase in enumerate(task_dict):
+        # count = 0
+        # phase = "loc"
+
         cond_list = task_dict[phase]
 
         # split timing files into 1D
         len_sec = len_run * len_tr
         for cond in cond_list:
-            h_cmd = f"module load afni-20.2.06 \n timing_tool.py -timing {subj_dir}/tf_{phase}_{cond}.txt -tr {len_tr} -stim_dur {beh_dur} -run_len {len_sec} -min_frac 0.3 -timing_to_1D {subj_dir}/tmp_tf_{phase}_{cond} -per_run_file"
-            h_spl = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
-            print(h_spl.communicate())
+            if not os.path.exists(
+                os.path.join(subj_dir, f"tmp_tf_{phase}_{cond}_r01.1D")
+            ):
+                h_cmd = f"""
+                    module load afni-20.2.06 \n timing_tool.py -timing {subj_dir}/tf_{phase}_{cond}.txt \
+                        -tr {len_tr} -stim_dur {beh_dur} -run_len {len_sec} -min_frac 0.3 -timing_to_1D \
+                        {subj_dir}/tmp_tf_{phase}_{cond} -per_run_file
+                """
+                h_spl = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
+                print(h_spl.communicate())
 
         # make attribute files for e/run
         for run in range(1, num_runs + 1):
@@ -190,8 +217,8 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
             ]
             tf_list.sort()
 
-            # make df
-            h_df = pd.concat(
+            # make attribute df - combine columns
+            df_att = pd.concat(
                 [
                     pd.read_csv(
                         os.path.join(subj_dir, item), names=[item.split("_")[3]]
@@ -200,39 +227,68 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
                 ],
                 axis=1,
             )
-            for cond in cond_list:
-                h_df.loc[h_df[cond] > 0, "att"] = cond
-            h_df = h_df.replace(np.nan, "base", regex=True)
+            column_list = list(df_att)
 
-            # subset df, write
-            #   add col of 0s for reason?
-            df_out = pd.DataFrame(h_df["att"])
-            df_out["last"] = 0
+            # new attribute (att) column, fill with column name (cond)
+            for cond in cond_list:
+                df_att.loc[df_att[cond] == 1, "att"] = cond
+
+            # clean up df
+            for i, j in enumerate(df_att["att"]):
+
+                # Fill holes with preceding att value
+                #   skip first, last few volumes
+                if i > 1 and i < (len(df_att) - 2) and pd.isnull(df_att.loc[i, "att"]):
+                    if not pd.isnull(df_att.loc[(i - 1), "att"]):
+                        df_att.at[i, "att"] = df_att.loc[(i - 1), "att"]
+                    else:
+                        df_att.at[i, "att"] = df_att.loc[(i - 2), "att"]
+
+                # remove volumes that had multiple behaviors
+                if df_att[column_list].iloc[i].sum() > 1:
+                    df_att.at[i, "att"] = "rest"
+
+            # fill NaN with rest, add col of 0s for some reason
+            df_att = df_att.replace(np.nan, "rest", regex=True)
+            df_att["zero"] = 0
+
+            # write
+            col_select = ["att", "zero"]
             h_out = os.path.join(
                 mvpa_dir, "BOLD", f"task00{count+1}_run00{run}", "attributes.txt"
             )
-            np.savetxt(h_out, df_out.values, fmt="%s", delimiter=" ")
+            np.savetxt(h_out, df_att[col_select].values, fmt="%s", delimiter=" ")
 
-            # onset times - onset dur 1?
+            # make onset times for each task/run
             model_dir = os.path.join(
                 mvpa_dir, "model", "onsets", f"task00{count+1}_run00{run}"
             )
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
+
             for cc, cond in enumerate(cond_list):
+
+                # determine start and end volume of each cond block
+                ons_dict = {"Start": [], "End": []}
+                for i, j in enumerate(df_att["att"]):
+                    if j == cond and not df_att.loc[(i - 1), "att"] == cond:
+                        ons_dict["Start"].append(i)
+                    elif j == cond and not df_att.loc[(i + 1), "att"] == cond:
+                        ons_dict["End"].append(i)
+
+                # determine start, duration of each block in volume time
+                df_ons = pd.DataFrame(ons_dict)
+                df_ons["ons"] = round((df_ons["Start"] * len_tr), 1)
+                df_ons["dur"] = round(((df_ons["End"] - df_ons["Start"]) * len_tr), 1)
+                df_ons["one"] = 1
+
+                # write
+                col_select = ["ons", "dur", "one"]
                 h_out = os.path.join(model_dir, f"cond00{cc+1}.txt")
-                h_df = pd.read_csv(
-                    os.path.join(subj_dir, f"tf_{phase}_{cond}.txt"),
-                    sep="\t",
-                    header=None,
-                )
-                df_out = pd.DataFrame(h_df.iloc[run - 1])
-                df_out["dur"] = beh_dur
-                df_out["last"] = 1
-                df_out.drop(df_out.tail(1).index, inplace=True)
-                np.savetxt(h_out, df_out.values, fmt="%s")
+                np.savetxt(h_out, df_ons[col_select].values, fmt="%s", delimiter=" ")
 
 
+# %%
 # receive arguments
 def func_argparser():
     parser = ArgumentParser("Receive Bash args from wrapper")
@@ -248,21 +304,16 @@ def func_argparser():
 # %%
 def main():
 
-    # # For testing
-    # h_subj = "sub-005"
-    # h_subj_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005/ses-S1"
-    # h_decon_type = "2GAM"
-    # h_len_tr = 1.76
-    # h_task_dict = {"loc": ["face", "scene", "num"]}
-    # h_beh_dur = 1
-    # h_der_dir = "/scratch/madlab/nate_vCAT/derivatives/sub-005"
-    # func_job(h_subj, h_subj_dir, h_decon_type, h_len_tr, h_task_dict, h_beh_dur)
-
     args = func_argparser().parse_args()
     # print(args.h_sub, args.h_dir, args.h_dct, args.h_trl, h_task_dict, args.h_beh)
     func_job(
-        args.h_sub, args.h_dir, args.h_dct, float(
-            args.h_trl), h_task_dict, args.h_beh, args.h_der
+        args.h_sub,
+        args.h_dir,
+        args.h_dct,
+        float(args.h_trl),
+        h_task_dict,
+        args.h_beh,
+        args.h_der,
     )
 
 
