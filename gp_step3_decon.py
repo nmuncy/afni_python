@@ -90,7 +90,6 @@ def func_job(phase, decon_type, work_dir, sub_num):
 
     # par_dir = "/scratch/madlab/nate_vCAT"
     # work_dir = os.path.join(par_dir, "derivatives", subj, sess)
-
     """
     Step 1: Make motion regressors
 
@@ -218,7 +217,7 @@ def func_job(phase, decon_type, work_dir, sub_num):
         os.path.join(work_dir, f"{phase}_{decon_type}_stats_REML+tlrc.HEAD")
     ):
         h_cmd = f"cd {work_dir} \n tcsh -x {phase}_{decon_type}_stats.REML_cmd -dsort {phase}_WMe_rall+tlrc"
-        func_sbatch(h_cmd, 1, 4, 6, f"{sub_num}rml", work_dir)
+        func_sbatch(h_cmd, 4, 4, 6, f"{sub_num}rml", work_dir)
 
 
 def main():
