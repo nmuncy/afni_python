@@ -1,15 +1,19 @@
 """
 Notes
+
+Written in Python 3.8
 """
 # %%
 import subprocess
 import fnmatch
 import os
+import json
 import pandas as pd
 import numpy as np
 from argparse import ArgumentParser
 from gp_step1_preproc import func_sbatch
-from mvpa_step1_submit import task_dict as h_task_dict
+
+# from mvpa_step1_submit import task_dict as h_task_dict
 
 
 # %%
@@ -181,7 +185,7 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
 
     3) cond00?.txt - each condition/attribut type has own onset time
         - ref condtion_key.txt file for definitions
-        - written to sub*/model/onsets/task*
+        - written to sub*/model/model00?/onsets/task*
         - format = onset, block duration, 1
             e.g. 157.5 22.5 1
             duration is in volume time
@@ -261,7 +265,11 @@ def func_job(subj, subj_dir, decon_type, len_tr, task_dict, beh_dur, der_dir):
 
             # make onset times for each task/run
             model_dir = os.path.join(
-                mvpa_dir, "model", "onsets", f"task00{count+1}_run00{run}"
+                mvpa_dir,
+                "model",
+                f"model00{count+1}",
+                "onsets",
+                f"task00{count+1}_run00{run}",
             )
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
@@ -305,6 +313,9 @@ def func_argparser():
 def main():
 
     args = func_argparser().parse_args()
+    with open(os.path.join(args.h_der, "mvpa/task_dict.json")) as json_file:
+        h_task_dict = json.load(json_file)
+
     # print(args.h_sub, args.h_dir, args.h_dct, args.h_trl, h_task_dict, args.h_beh)
     func_job(
         args.h_sub,

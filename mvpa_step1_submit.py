@@ -1,7 +1,7 @@
 """
 Notes
 
-Step1 submit, setup written for Python 3.8.5
+This is written in Python 3.8
 """
 
 # %%
@@ -10,6 +10,7 @@ import fnmatch
 import subprocess
 from datetime import datetime
 import time
+import json
 
 # set up
 deriv_dir = "/scratch/madlab/nate_vCAT/derivatives"
@@ -37,17 +38,24 @@ def main():
         pseudo BIDS formatting for directory hierarchy, file names,
         and info in files.
     """
-    subj_list = [x for x in os.listdir(
-        deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
+    subj_list = [x for x in os.listdir(deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
     subj_list.sort()
     if not os.path.exists(mvpa_dir):
         os.makedirs(mvpa_dir)
 
+    # write task_dict.json to avoid awkward import
+    with open(os.path.join(mvpa_dir, "task_dict.json"), "w") as outfile:
+        json.dump(task_dict, outfile)
+
     # scan key
     ref_subj = os.path.join(deriv_dir, subj_list[0])
-    h_cmd = f"module load afni-20.2.06 \n 3dinfo -tr {os.path.join(ref_subj, sess)}/run-1_{list(task_dict.keys())[0]}_scale+tlrc"
+    h_cmd = f"""
+        module load afni-20.2.06
+        3dinfo -tr {os.path.join(ref_subj, sess)}/run-1_{list(task_dict.keys())[0]}_scale+tlrc
+    """
     h_tr = subprocess.Popen(h_cmd, shell=True, stdout=subprocess.PIPE)
-    len_tr = float(h_tr.communicate()[0].decode("utf-8").strip())
+    h_len_tr = h_tr.communicate()[0].decode("utf-8").strip()
+    len_tr = float(h_len_tr)
     with open(os.path.join(mvpa_dir, "scan_key.txt"), "w") as scan_key:
         scan_key.write(f"TR {len_tr}")
 
@@ -84,7 +92,6 @@ def main():
     os.makedirs(out_dir)
 
     for subj in subj_list:
-        # subj = subj_list[2]
 
         # Set stdout/err file
         h_out = os.path.join(out_dir, f"out_{subj}.txt")
@@ -97,12 +104,11 @@ def main():
             -J "PPI{subj.split("-")[1]}" -t 2:00:00 --mem=1000 --ntasks-per-node=1 \
             -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
             --account iacc_madlab --qos pq_madlab \
-            --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
-            python {code_dir}/mvpa_step1_setup.py {subj} {subj_dir} {decon_type} {len_tr} {beh_dur} {deriv_dir}"
+            --wrap="~/miniconda3/bin/python {code_dir}/mvpa_step1_setup.py \
+                {subj} {subj_dir} {decon_type} {len_tr} {beh_dur} {deriv_dir}"
         """
 
-        sbatch_submit = subprocess.Popen(
-            sbatch_job, shell=True, stdout=subprocess.PIPE)
+        sbatch_submit = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
         job_id = sbatch_submit.communicate()[0]
         print(job_id)
         time.sleep(1)
