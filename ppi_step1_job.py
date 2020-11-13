@@ -8,7 +8,7 @@ import sys
 import subprocess
 import fnmatch
 import json
-from gp_step1_preproc import func_sbatch
+from gp_step0_dcm2nii import func_sbatch
 
 
 # PPI decon function
