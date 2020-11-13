@@ -11,13 +11,6 @@ Notes
     scaling the data.
 
 3) Written in Python 3.8, has afni and c3d dependencies.
-
-
-TODO:
-  1) Test second half of fmap 3dcopy (if IntendedFor)
-        and copy of fmap for e/run
-  2) Update template? Referencing special template/priors
-  3) Update censor limit to 0.05 rather than 0.1?
 """
 
 import json
@@ -25,43 +18,45 @@ import os
 import subprocess
 import fnmatch
 import math
-import time
+
+# import time
 from argparse import ArgumentParser
+from gp_step0_dcm2nii import func_sbatch
 
 
 # Submit jobs to slurm, check & wait for job to finish
 #   Note: len(h_str) < 8
-def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
+# def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
 
-    full_name = f"{work_dir}/sbatch_writeOut_{h_str}"
-    sbatch_job = f"""
-        sbatch \
-        -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
-        -p centos7_IB_44C_512G -o {full_name}.out -e {full_name}.err \
-        --account iacc_madlab --qos pq_madlab \
-        --wrap="module load afni-20.2.06 \n {command}"
-    """
-    sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
-    job_id = sbatch_response.communicate()[0]
-    print(job_id, h_str, sbatch_job)
+#     full_name = f"{work_dir}/sbatch_writeOut_{h_str}"
+#     sbatch_job = f"""
+#         sbatch \
+#         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
+#         -p centos7_IB_44C_512G -o {full_name}.out -e {full_name}.err \
+#         --account iacc_madlab --qos pq_madlab \
+#         --wrap="module load afni-20.2.06 \n {command}"
+#     """
+#     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
+#     job_id = sbatch_response.communicate()[0]
+#     print(job_id, h_str, sbatch_job)
 
-    while_count = 0
-    status = False
-    while not status:
+#     while_count = 0
+#     status = False
+#     while not status:
 
-        check_cmd = "squeue -u $(whoami)"
-        sq_check = subprocess.Popen(check_cmd, shell=True, stdout=subprocess.PIPE)
-        out_lines = sq_check.communicate()[0]
-        b_decode = out_lines.decode("utf-8")
+#         check_cmd = "squeue -u $(whoami)"
+#         sq_check = subprocess.Popen(check_cmd, shell=True, stdout=subprocess.PIPE)
+#         out_lines = sq_check.communicate()[0]
+#         b_decode = out_lines.decode("utf-8")
 
-        if h_str not in b_decode:
-            status = True
+#         if h_str not in b_decode:
+#             status = True
 
-        if not status:
-            while_count += 1
-            print(f"Wait count for sbatch job {h_str}: ", while_count)
-            time.sleep(3)
-    print(f'Sbatch job "{h_str}" finished')
+#         if not status:
+#             while_count += 1
+#             print(f"Wait count for sbatch job {h_str}: ", while_count)
+#             time.sleep(3)
+#     print(f'Sbatch job "{h_str}" finished')
 
 
 # make a list of all EPI scans of phase X
@@ -136,6 +131,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
                 h_cmd = f"3dcopy {epi_nii} {epi_raw}"
                 func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}epi", work_dir)
 
+    # %%
     # fmap
     if blip_tog == 1:
 
@@ -152,7 +148,6 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
                 if "IntendedFor" not in h_json:
                     fmap_list.append(i.split(".")[0] + ".nii.gz")
                 else:
-                    # this part isn't tested
                     for phase in phase_list:
                         epi_list = [
                             epi
@@ -162,7 +157,9 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
                         for k in epi_list:
                             h_epi = os.path.join(sess, "func", k)
                             if h_epi in h_json["IntendedFor"]:
-                                fmap_list.append(i.split(".")[0] + ".nii.gz")
+                                h_fmap = i.split(".")[0] + ".nii.gz"
+                                if h_fmap not in fmap_list:
+                                    fmap_list.append(h_fmap)
 
         # copy fmap function
         def func_fmap(h_file, h_run):
@@ -177,7 +174,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
                 func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}fmap", work_dir)
 
         # Make fmap for each epi run
-        #   Test this more
+        #   TODO: Test this more (if len(fmap_list) != 2)
         for phase in phase_list:
             epi_list = [
                 epi
@@ -238,7 +235,7 @@ def func_preproc(data_dir, work_dir, subj, sess, phase_list, blip_tog):
                     cd {work_dir}
                     3dToutcount -automask -fraction -polort {pol} \
                         -legendre {run}+orig > outcount.{run}.1D
-                    1deval -a outcount.{run}.1D -expr '1-step(a-0.1)' > out.cen.{run}.1D
+                    1deval -a outcount.{run}.1D -expr '1-step(a-0.05)' > out.cen.{run}.1D
                 """
                 func_sbatch(h_cmd, 1, 1, 1, f"{subj_num}out", work_dir)
 

@@ -3,7 +3,7 @@ Notes:
 
 Wrapper script for step1_preproc.py.
 
-Update paths in "set up" section.
+Usage - update "set up" section.
 
 phase_list = list of phases gathered within a single session.
     For example, if a study and then a test phase were both scanned
@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 import subprocess
 import time
-
+import fnmatch
 
 # set up
 code_dir = "/home/nmuncy/compute/afni_python"
@@ -37,11 +37,14 @@ def main():
         os.makedirs(out_dir)
 
     # submit job for each subj/sess/phase
-    subj_list = os.listdir(os.path.join(parent_dir, "dset"))
+    subj_list = [
+        x
+        for x in os.listdir(os.path.join(parent_dir, "dset"))
+        if fnmatch.fnmatch(x, "sub-*")
+    ]
     subj_list.sort()
 
     for i in subj_list:
-        # i = subj_list[2]
         for j in sess_list:
             if not os.path.exists(
                 os.path.join(
@@ -58,7 +61,7 @@ def main():
 
                 sbatch_job = f"""
                     sbatch \
-                        -J "TS1{i.split("-")[1]}" -t 10:00:00 --mem=4000 --ntasks-per-node=1 \
+                        -J "GP1{i.split("-")[1]}" -t 10:00:00 --mem=4000 --ntasks-per-node=1 \
                         -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
                         --account iacc_madlab --qos pq_madlab \
                         --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
