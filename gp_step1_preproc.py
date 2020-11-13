@@ -18,45 +18,8 @@ import os
 import subprocess
 import fnmatch
 import math
-
-# import time
 from argparse import ArgumentParser
 from gp_step0_dcm2nii import func_sbatch
-
-
-# Submit jobs to slurm, check & wait for job to finish
-#   Note: len(h_str) < 8
-# def func_sbatch(command, wall_hours, mem_gig, num_proc, h_str, work_dir):
-
-#     full_name = f"{work_dir}/sbatch_writeOut_{h_str}"
-#     sbatch_job = f"""
-#         sbatch \
-#         -J {h_str} -t {wall_hours}:00:00 --mem={mem_gig}000 --ntasks-per-node={num_proc} \
-#         -p centos7_IB_44C_512G -o {full_name}.out -e {full_name}.err \
-#         --account iacc_madlab --qos pq_madlab \
-#         --wrap="module load afni-20.2.06 \n {command}"
-#     """
-#     sbatch_response = subprocess.Popen(sbatch_job, shell=True, stdout=subprocess.PIPE)
-#     job_id = sbatch_response.communicate()[0]
-#     print(job_id, h_str, sbatch_job)
-
-#     while_count = 0
-#     status = False
-#     while not status:
-
-#         check_cmd = "squeue -u $(whoami)"
-#         sq_check = subprocess.Popen(check_cmd, shell=True, stdout=subprocess.PIPE)
-#         out_lines = sq_check.communicate()[0]
-#         b_decode = out_lines.decode("utf-8")
-
-#         if h_str not in b_decode:
-#             status = True
-
-#         if not status:
-#             while_count += 1
-#             print(f"Wait count for sbatch job {h_str}: ", while_count)
-#             time.sleep(3)
-#     print(f'Sbatch job "{h_str}" finished')
 
 
 # make a list of all EPI scans of phase X
