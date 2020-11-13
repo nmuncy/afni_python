@@ -1,3 +1,3 @@
 # afni_python
 
-gp = general pre-processing, precedes other jobs (e.g. ppi)
+gp = general processing, precedes other jobs (e.g. ppi, mvpa, group analyses)
