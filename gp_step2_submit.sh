@@ -1,11 +1,12 @@
 #!/bin/bash
 
-module load r-3.6.3-gcc-8.2.0-s6lqv6i
+module load r-3.5.1-gcc-8.2.0-djzshna
 
 behavDir=/home/data/madlab/Mattfeld_vCAT/behav
 derivDir=/scratch/madlab/nate_vCAT/derivatives
 codeDir=~/compute/afni_python
 
+# # For testing
 # behavDir=/Users/nmuncy/Projects/learn_mvpa/vCAT_data
 # derivDir=/Users/nmuncy/Projects/afni_python
 # codeDir=$derivDir
