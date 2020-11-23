@@ -21,7 +21,7 @@ import fnmatch
 code_dir = "/home/nmuncy/compute/afni_python"
 parent_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
-phase_list = ["loc"]
+phase_list = ["loc", "Study"]
 blip_toggle = 1  # 1 = on, 0 = off
 
 
@@ -52,7 +52,7 @@ def main():
                     "derivatives",
                     i,
                     j,
-                    f"run-1_{phase_list[0]}_scale+tlrc.HEAD",
+                    f"run-1_{phase_list[1]}_scale+tlrc.HEAD",
                 )
             ):
 
