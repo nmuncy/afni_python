@@ -1,20 +1,20 @@
 
 
-# args <- commandArgs()
-# dataDir <- args[6]
-# outDir <- args[7]
-# subjStr <- args[8]
-# numRuns <- args[9]
-# phase <- args[10]
+args <- commandArgs()
+dataDir <- args[6]
+outDir <- args[7]
+subjStr <- args[8]
+numRuns <- args[9]
+phase <- args[10]
 
 
-# For testing
-subjStr <- "vCAT_005"
-dataDir <- paste0("/Users/nmuncy/Projects/learn_mvpa/vCAT_data/", subjStr)
-outDir <- paste0("/Users/nmuncy/Projects/afni_python/",subjStr,"/ses-S1")
-numRuns <- 4
-phase <- "task"
-run <- 1
+# # For testing
+# subjStr <- "vCAT_005"
+# dataDir <- paste0("/Users/nmuncy/Projects/learn_mvpa/vCAT_data/", subjStr)
+# outDir <- paste0("/Users/nmuncy/Projects/afni_python/",subjStr,"/ses-S1")
+# numRuns <- 4
+# phase <- "task"
+# run <- 1
 
 
 for(run in 1:numRuns){
@@ -105,7 +105,7 @@ for(run in 1:numRuns){
           if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 1){
             
             hold_event <- get(paste0("ons_",type,"_scene_event_cor"))
-            assign(paste0("ons_",type,"_face_scene_cor"), c(hold_event, round(data_raw$onset[i],1)))
+            assign(paste0("ons_",type,"_scene__cor"), c(hold_event, round(data_raw$onset[i],1)))
             
             hold_prec <- get(paste0("ons_",type,"_scene_prec_cor"))
             assign(paste0("ons_",type,"_scene_prec_cor"), c(hold_prec, round(data_raw$onset[i-1],1)))
@@ -113,7 +113,7 @@ for(run in 1:numRuns){
           }else if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 0){
             
             hold_event <- get(paste0("ons_",type,"_scene_event_icor"))
-            assign(paste0("ons_",type,"_face_scene_icor"), c(hold_event, round(data_raw$onset[i],1)))
+            assign(paste0("ons_",type,"_scene_event_icor"), c(hold_event, round(data_raw$onset[i],1)))
             
             hold_prec <- get(paste0("ons_",type,"_scene_prec_icor"))
             assign(paste0("ons_",type,"_scene_prec_icor"), c(hold_prec, round(data_raw$onset[i-1],1)))

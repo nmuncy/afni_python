@@ -21,7 +21,7 @@ import time
 code_dir = "/home/nmuncy/compute/afni_python"
 work_dir = "/scratch/madlab/nate_vCAT"
 sess_list = ["ses-S1"]
-phase_list = ["loc"]
+phase_list = ["vCAT"]
 decon_type = "2GAM"
 seed_dict = {"LHC": "-24 -12 -22"}
 stim_dur = 2
@@ -38,7 +38,8 @@ def main():
     os.makedirs(out_dir)
 
     # submit job for each subj/sess/phase
-    subj_list = [x for x in os.listdir(deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
+    subj_list = [x for x in os.listdir(
+        deriv_dir) if fnmatch.fnmatch(x, "sub-*")]
     subj_list.sort()
 
     for i in subj_list:

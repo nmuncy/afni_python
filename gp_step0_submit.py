@@ -3,7 +3,7 @@ Notes:
 
 Wrapper script for step0_dcm2nii.py.
 
-Update paths in "set paths" section.
+Usage - update "set up" section.
 """
 
 # %%
@@ -12,11 +12,13 @@ from datetime import datetime
 import fnmatch
 import subprocess
 import time
+import json
 
-# set paths
+# set up
 code_dir = "/home/nmuncy/compute/afni_python"
 tar_dir = "/home/data/madlab/Mattfeld_vCAT/sourcedata"
 work_dir = "/scratch/madlab/nate_vCAT"
+scan_dict = {"func": ["vCAT", "loc"], "anat": "T1w", "fmap": "Dist"}
 
 
 # %%
@@ -36,9 +38,15 @@ def main():
 
     # list of tar balls
     tar_list = [x for x in os.listdir(tar_dir) if fnmatch.fnmatch(x, "*.tar.gz")]
+    tar_list.sort()
+
+    # write json to avoid quotation issue
+    with open(os.path.join(slurm_dir, "scan_dict.json"), "w") as outfile:
+        json.dump(scan_dict, outfile)
 
     # submit jobs
     for i in tar_list:
+        # i = tar_list[0]
 
         tar_file = i.split("/")[-1]
         tar_str = tar_file.split(".")[0]
@@ -47,7 +55,7 @@ def main():
 
         sbatch_job = f"""
             sbatch \
-            -J "TS0" -t 2:00:00 --mem=1000 --ntasks-per-node=1 \
+            -J "GP0{i.split("-")[3]}" -t 2:00:00 --mem=1000 --ntasks-per-node=1 \
             -p centos7_IB_44C_512G  -o {h_out} -e {h_err} \
             --account iacc_madlab --qos pq_madlab \
             --wrap="module load python-3.7.0-gcc-8.2.0-joh2xyk \n \
@@ -58,8 +66,7 @@ def main():
         job_id = sbatch_submit.communicate()[0]
         print(job_id)
 
-        # give jobs time to start so we don't hit the "pending lockout"
-        time.sleep(30)
+        time.sleep(1)
 
 
 if __name__ == "__main__":
