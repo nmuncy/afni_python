@@ -5,12 +5,18 @@ module load r-3.6.3-gcc-8.2.0-s6lqv6i
 behavDir=/home/data/madlab/Mattfeld_vCAT/behav
 derivDir=/scratch/madlab/nate_vCAT/derivatives
 codeDir=~/compute/afni_python
+phaseArr=("loc" "Study")
+runArr=(2 4)
+
+if [ ${#phaseArr[@]} != ${#runArr[@]} ]; then
+	echo "phaseArr and runArr not equal length. Exiting." >&2
+	exit 1
+fi
 
 # behavDir=/Users/nmuncy/Projects/learn_mvpa/vCAT_data
 # derivDir=/Users/nmuncy/Projects/afni_python
 # codeDir=$derivDir
-
-numRuns=2
+# numRuns=2
 
 cd $behavDir
 for i in vCAT*; do
@@ -20,6 +26,8 @@ for i in vCAT*; do
 	outDir=${derivDir}/${subj}/ses-S1
 
 	if [ -d $outDir ]; then
-		Rscript ${codeDir}/gp_step2_timingFiles_localizer.R $dataDir $outDir $i $numRuns
+		for j in $!phaseArr[@]}; do
+			Rscript ${codeDir}/gp_step2_timingFiles_vCAT.R $dataDir $outDir $i ${runArr[$j]} ${phaseArr[$j]}
+		done
 	fi
 done
