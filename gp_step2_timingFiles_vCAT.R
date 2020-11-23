@@ -18,59 +18,59 @@ phase <- args[10]
 
 
 for(run in 1:numRuns){
-  
+
   # determine append
   if (run == 1) {
     h_ap <- F
   } else {
     h_ap <- T
   }
-  
+
   if(phase == "loc"){
-    
+
     # get data
     data_raw <- read.delim(paste0(dataDir,"/", subjStr, "_", run, "_localizer.csv"), sep = ",")
-    
+
     # set out files
     #   3 timing files - for scene, face, and numbers
     out_scene <- paste0(outDir, "/tf_loc_scene.txt")
     out_face <- paste0(outDir, "/tf_loc_face.txt")
     out_num <- paste0(outDir, "/tf_loc_num.txt")
-    
+
     # determine index, onset for scene, face, integer
     ind_scene <- grep("scene_img", data_raw$stim)
     ons_scene <- round(data_raw$StimOnset[ind_scene], 1)
-    
+
     ind_face <- grep("face_img", data_raw$stim)
     ons_face <- round(data_raw$StimOnset[ind_face], 1)
-    
+
     ind_num <- grep("^[0-9]", data_raw$stim)
     ons_num <- round(data_raw$StimOnset[ind_num], 1)
-    
+
     # write out
     cat(ons_scene, "\n", file = out_scene, append = h_ap, sep = "\t")
     cat(ons_face, "\n", file = out_face, append = h_ap, sep = "\t")
     cat(ons_num, "\n", file = out_num, append = h_ap, sep = "\t")
   }
-  
+
   if(phase == "task"){
-    
+
     # get data
     data_raw <- read.delim(paste0(dataDir, "/", subjStr, "_simp_", phase, run, ".csv"), sep=",")
-    
+
     # replace NA with NR for BL types
     data_raw$k_img[is.na(data_raw$k_img)] <- "NR"
     data_raw$stim[is.na(data_raw$stim)] <- "NR"
-    
+
     # determine onsets for type (BL, cond)
     #   face vs scene
     #   responded, correct vs incorrect
     #   event and preceding event
     for(type in c("cond", "BL")){
-      
+
       # get indices
       ind_hold <- grep(type, data_raw$trialtype)
-      
+
       # start vectors
       for(i in c("face", "scene")){
         for(j in c("prec", "event")){
@@ -86,41 +86,41 @@ for(run in 1:numRuns){
       for(i in ind_hold){
         if(data_raw$stim[i-1] == "face1" || data_raw$stim[i-1] == "face2"){
           if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 1){
-            
+
             hold_event <- get(paste0("ons_",type,"_face_event_cor"))
             assign(paste0("ons_",type,"_face_event_cor"), c(hold_event, round(data_raw$onset[i],1)))
-            
+
             hold_prec <- get(paste0("ons_",type,"_face_prec_cor"))
             assign(paste0("ons_",type,"_face_prec_cor"), c(hold_prec, round(data_raw$onset[i-1],1)))
-            
+
           }else if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 0){
-            
+
             hold_event <- get(paste0("ons_",type,"_face_event_icor"))
             assign(paste0("ons_",type,"_face_event_icor"), c(hold_event, round(data_raw$onset[i],1)))
-            
+
             hold_prec <- get(paste0("ons_",type,"_face_prec_icor"))
             assign(paste0("ons_",type,"_face_prec_icor"), c(hold_prec, round(data_raw$onset[i-1],1)))
           }
         }else if(data_raw$stim[i-1] == "scene1" || data_raw$stim[i-1] == "scene2"){
           if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 1){
-            
+
             hold_event <- get(paste0("ons_",type,"_scene_event_cor"))
-            assign(paste0("ons_",type,"_scene__cor"), c(hold_event, round(data_raw$onset[i],1)))
-            
+            assign(paste0("ons_",type,"_scene_event_cor"), c(hold_event, round(data_raw$onset[i],1)))
+
             hold_prec <- get(paste0("ons_",type,"_scene_prec_cor"))
             assign(paste0("ons_",type,"_scene_prec_cor"), c(hold_prec, round(data_raw$onset[i-1],1)))
-            
+
           }else if(data_raw$resp[i-1] != "None" && data_raw$acc[i-1] == 0){
-            
+
             hold_event <- get(paste0("ons_",type,"_scene_event_icor"))
             assign(paste0("ons_",type,"_scene_event_icor"), c(hold_event, round(data_raw$onset[i],1)))
-            
+
             hold_prec <- get(paste0("ons_",type,"_scene_prec_icor"))
             assign(paste0("ons_",type,"_scene_prec_icor"), c(hold_prec, round(data_raw$onset[i-1],1)))
           }
         }
       }
-      
+
       # write out
       for(i in c("face", "scene")){
         for(j in c("prec", "event")){
@@ -135,7 +135,7 @@ for(run in 1:numRuns){
         }
       }
     }
-    
+
   }
 }
 
@@ -147,7 +147,7 @@ for(run in 1:numRuns){
 # # get indices
 # ind_cond <- grep("COND", data_raw$stim)
 # ind_bl <- grep("BL", data_raw$trialtype)
-# 
+#
 # # start vectors for cond
 # #   face/scene * cond/precede * i/cor
 # for(i in c("face", "scene")){
@@ -157,7 +157,7 @@ for(run in 1:numRuns){
 #     }
 #   }
 # }
-# 
+#
 # # determine onsets for cond
 # #   face versus scene
 # #   responded, correct vs incorrect
@@ -181,7 +181,7 @@ for(run in 1:numRuns){
 #     }
 #   }
 # }
-# 
+#
 # # start vectors for bl - same as above
 # #   face/scene * i/corr * fixed/bl
 # for(i in c("face", "scene")){
@@ -191,7 +191,7 @@ for(run in 1:numRuns){
 #     }
 #   }
 # }
-# 
+#
 # # determine onsets for bl - same as above
 # #   face versus scene
 # #   responded, corr vs incorrect

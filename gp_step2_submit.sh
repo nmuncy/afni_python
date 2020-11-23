@@ -5,7 +5,7 @@ module load r-3.5.1-gcc-8.2.0-djzshna
 behavDir=/home/data/madlab/Mattfeld_vCAT/behav
 derivDir=/scratch/madlab/nate_vCAT/derivatives
 codeDir=~/compute/afni_python
-phaseArr=("loc" "Study")
+phaseArr=("loc" "task")
 runArr=(2 4)
 
 if [ ${#phaseArr[@]} != ${#runArr[@]} ]; then
@@ -27,7 +27,7 @@ for i in vCAT*; do
 	outDir=${derivDir}/${subj}/ses-S1
 
 	if [ -d $outDir ]; then
-		for j in $!phaseArr[@]}; do
+		for j in ${!phaseArr[@]}; do
 			Rscript ${codeDir}/gp_step2_timingFiles_vCAT.R $dataDir $outDir $i ${runArr[$j]} ${phaseArr[$j]}
 		done
 	fi
